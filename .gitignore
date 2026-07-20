@@ -1,0 +1,93 @@
+# ==========================================
+# Context-AI - Root Git Ignore Configuration
+# ==========================================
+
+# ------------------------------------------
+# Node.js / Next.js / Frontend
+# ------------------------------------------
+node_modules/
+**/node_modules/
+.next/
+**/out/
+**/build/
+**/dist/
+.cache/
+*.tsbuildinfo
+
+# Logs & Debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Diagnostic / Testing / Coverage
+coverage/
+.nyc_output/
+.turbo/
+.vercel/
+
+# ------------------------------------------
+# Python / FastAPI / Backend
+# ------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Pytest / Mypy / Ruff / Cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------
+# Databases & Large Data Files
+# ------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+
+# ------------------------------------------
+# Environment & Secrets (NEVER COMMIT SECRETS)
+# ------------------------------------------
+.env
+*.env
+.env*.local
+!.env.example
+
+# ------------------------------------------
+# Operating System & IDE Files
+# ------------------------------------------
+# macOS
+.DS_Store
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE & Editor files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
