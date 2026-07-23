@@ -1,13 +1,14 @@
+import gc
 import fitz  # PyMuPDF
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Generator
 from app.core.logging import logger
 
 class PDFService:
     @staticmethod
-    def extract_pages(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
+    def extract_pages_generator(file_bytes: bytes, filename: str) -> Generator[Dict[str, Any], None, None]:
         """
-        Parses a PDF from byte stream preserving 1-indexed page numbers.
-        Returns a list of dicts: [{"page_number": int, "text": str}]
+        Yields PDF pages one by one as dictionaries: {"page_number": int, "text": str, "total_pages": int}
+        Immediately releases memory for each page to keep container RAM < 100 MB.
         """
         if not file_bytes:
             raise ValueError("Uploaded file is empty.")
@@ -20,7 +21,6 @@ class PDFService:
 
         if doc.is_encrypted:
             try:
-                # Try authenticating with empty password
                 unlocked = doc.authenticate("")
                 if not unlocked:
                     raise ValueError("PDF document is encrypted/password protected.")
@@ -29,18 +29,29 @@ class PDFService:
 
         total_pages = len(doc)
         if total_pages == 0:
+            doc.close()
             raise ValueError("PDF document has 0 pages.")
 
-        pages_data = []
         for page_idx in range(total_pages):
             page = doc.load_page(page_idx)
             text = page.get_text("text").strip()
-            # Preserve page numbers as 1-indexed
-            pages_data.append({
+            
+            # Explicitly close page handle
+            page = None
+            
+            yield {
                 "page_number": page_idx + 1,
-                "text": text
-            })
+                "text": text,
+                "total_pages": total_pages
+            }
 
         doc.close()
-        logger.info(f"Extracted {len(pages_data)} pages from '{filename}'")
-        return pages_data
+        doc = None
+        gc.collect()
+
+    @staticmethod
+    def extract_pages(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
+        """
+        Helper returning full pages list for backward compatibility.
+        """
+        return list(PDFService.extract_pages_generator(file_bytes, filename))

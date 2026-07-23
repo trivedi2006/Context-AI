@@ -1,5 +1,6 @@
 import uuid
-from typing import List, Dict, Any
+import gc
+from typing import List, Dict, Any, Generator
 from app.models.schemas import ChunkMetadata
 from app.core.logging import logger
 
@@ -30,13 +31,11 @@ class ChunkService:
 
             para_len = len(para_clean)
 
-            # If adding this paragraph exceeds target chunk size and current_chunk is not empty:
             if current_length + para_len > self.chunk_size_chars and current_chunk:
                 chunk_str = "\n\n".join(current_chunk).strip()
                 if chunk_str:
                     chunks.append(chunk_str)
 
-                # Maintain overlap from trailing paragraphs
                 overlap_length = 0
                 overlap_chunk: List[str] = []
                 for p in reversed(current_chunk):
@@ -48,7 +47,6 @@ class ChunkService:
                 current_chunk = overlap_chunk
                 current_length = overlap_length
 
-            # If single paragraph is exceptionally large, split on line or sentence boundaries
             if para_len > self.chunk_size_chars:
                 sub_lines = para_clean.split("\n")
                 for line in sub_lines:
@@ -71,14 +69,13 @@ class ChunkService:
 
         return chunks
 
-    def create_chunks(self, pages_data: List[Dict[str, Any]], filename: str) -> List[ChunkMetadata]:
+    def create_chunks_generator(self, pages_generator: Generator[Dict[str, Any], None, None], filename: str) -> Generator[ChunkMetadata, None, None]:
         """
-        Splits extracted PDF pages into context-aware chunks with metadata preserved.
+        Yields ChunkMetadata items incrementally from the pages generator.
+        Prevents storing all chunks in memory simultaneously.
         """
-        all_chunks: List[ChunkMetadata] = []
         global_chunk_count = 0
-
-        for page in pages_data:
+        for page in pages_generator:
             page_num = page["page_number"]
             page_text = page["text"]
             if not page_text or not page_text.strip():
@@ -88,13 +85,20 @@ class ChunkService:
             for idx, text in enumerate(raw_chunks):
                 global_chunk_count += 1
                 chunk_id = f"{uuid.uuid4().hex[:12]}_{page_num}_{idx}"
-                all_chunks.append(ChunkMetadata(
+                yield ChunkMetadata(
                     chunk_id=chunk_id,
                     document_name=filename,
                     page_number=page_num,
                     source=filename,
                     chunk_text=text
-                ))
+                )
+            del raw_chunks
 
-        logger.info(f"Created {len(all_chunks)} context-aware chunks (700-token target) for '{filename}'")
-        return all_chunks
+    def create_chunks(self, pages_data: List[Dict[str, Any]], filename: str) -> List[ChunkMetadata]:
+        """
+        Helper returning full chunks list for backward compatibility.
+        """
+        def _list_gen():
+            for p in pages_data:
+                yield p
+        return list(self.create_chunks_generator(_list_gen(), filename))

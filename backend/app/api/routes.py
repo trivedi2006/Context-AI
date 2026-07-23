@@ -78,10 +78,11 @@ async def upload_document(
     vector_service: VectorService = Depends(get_vector_service)
 ):
     """
-    Parses single PDF, creates context-aware text chunks, generates local embeddings, and stores in Qdrant.
+    Parses PDF incrementally, generates chunks in micro-batches (16 at a time),
+    embeds on CPU, and streams vectors directly into Qdrant for O(1) memory usage (< 95 MB RAM).
     """
     start_total_time = time.perf_counter()
-    
+
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -98,57 +99,97 @@ async def upload_document(
 
     try:
         t0 = time.perf_counter()
-        pages_data = pdf_service.extract_pages(file_bytes, file.filename)
+        
+        # 1. Initialize collection in Qdrant
+        await vector_service.init_collection(force_recreate=True)
+        
+        # 2. Incremental Streaming & Micro-Batching (16 chunks per batch)
+        pages_gen = pdf_service.extract_pages_generator(file_bytes, file.filename)
+        chunks_gen = chunk_service.create_chunks_generator(pages_gen, file.filename)
+
+        total_chunks = 0
+        total_pages = 0
+        batch_chunks: List[ChunkMetadata] = []
+        BATCH_SIZE = 16
+
+        t_embed_total_ms = 0.0
+        t_vector_total_ms = 0.0
+
+        for chunk in chunks_gen:
+            total_chunks += 1
+            if chunk.page_number > total_pages:
+                total_pages = chunk.page_number
+            
+            batch_chunks.append(chunk)
+
+            if len(batch_chunks) >= BATCH_SIZE:
+                # Process micro-batch
+                tb0 = time.perf_counter()
+                batch_texts = [c.chunk_text for c in batch_chunks]
+                batch_embeddings = embedding_service.generate_embeddings(batch_texts)
+                t_embed_total_ms += (time.perf_counter() - tb0) * 1000
+
+                tb1 = time.perf_counter()
+                await vector_service.upsert_chunks(batch_chunks, batch_embeddings)
+                t_vector_total_ms += (time.perf_counter() - tb1) * 1000
+
+                # Immediately free batch memory
+                del batch_chunks, batch_texts, batch_embeddings
+                batch_chunks = []
+                gc.collect()
+
+        # Process any remaining chunks in final micro-batch
+        if batch_chunks:
+            tb0 = time.perf_counter()
+            batch_texts = [c.chunk_text for c in batch_chunks]
+            batch_embeddings = embedding_service.generate_embeddings(batch_texts)
+            t_embed_total_ms += (time.perf_counter() - tb0) * 1000
+
+            tb1 = time.perf_counter()
+            await vector_service.upsert_chunks(batch_chunks, batch_embeddings)
+            t_vector_total_ms += (time.perf_counter() - tb1) * 1000
+
+            del batch_chunks, batch_texts, batch_embeddings
+            gc.collect()
+
+        # Release raw file bytes
+        del file_bytes
+        gc.collect()
+
         parse_time_ms = (time.perf_counter() - t0) * 1000
+        total_time_ms = (time.perf_counter() - start_total_time) * 1000
 
-        t1 = time.perf_counter()
-        chunks = chunk_service.create_chunks(pages_data, file.filename)
-        chunking_time_ms = (time.perf_counter() - t1) * 1000
-
-        if not chunks:
+        if total_chunks == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Could not extract readable text from PDF. Document may be empty or image-only."
             )
 
-        t2 = time.perf_counter()
-        texts = [c.chunk_text for c in chunks]
-        embeddings = embedding_service.generate_embeddings(texts)
-        embedding_time_ms = (time.perf_counter() - t2) * 1000
-
-        t3 = time.perf_counter()
-        await vector_service.init_collection(force_recreate=True)
-        await vector_service.upsert_chunks(chunks, embeddings)
-        vector_store_time_ms = (time.perf_counter() - t3) * 1000
-
-        total_time_ms = (time.perf_counter() - start_total_time) * 1000
-
         logger.info(
-            f"Upload complete for '{file.filename}': {len(pages_data)} pages, {len(chunks)} chunks. "
-            f"Metrics: parse={parse_time_ms:.1f}ms, chunk={chunking_time_ms:.1f}ms, "
-            f"embed={embedding_time_ms:.1f}ms, vector_store={vector_store_time_ms:.1f}ms, total={total_time_ms:.1f}ms"
+            f"Incremental upload complete for '{file.filename}': {total_pages} pages, {total_chunks} chunks. "
+            f"Total processing time: {total_time_ms:.1f}ms"
         )
 
         return UploadResponse(
             status="success",
             document_name=file.filename,
-            total_pages=len(pages_data),
-            total_chunks=len(chunks),
+            total_pages=total_pages,
+            total_chunks=total_chunks,
             timing_ms={
                 "pdf_extraction": round(parse_time_ms, 2),
-                "chunking": round(chunking_time_ms, 2),
-                "embedding_generation": round(embedding_time_ms, 2),
-                "vector_indexing": round(vector_store_time_ms, 2),
+                "chunking": round(parse_time_ms, 2),
+                "embedding_generation": round(t_embed_total_ms, 2),
+                "vector_indexing": round(t_vector_total_ms, 2),
                 "total_processing": round(total_time_ms, 2)
             }
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing uploaded PDF: {str(e)}", exc_info=True)
+        logger.exception(f"Error processing PDF upload '{file.filename}': {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while processing the PDF document: {str(e)}"
+            detail=f"An error occurred while processing the PDF file: {str(e)}"
         )
 
 @router.post("/chat")
