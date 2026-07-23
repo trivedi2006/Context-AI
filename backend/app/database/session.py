@@ -7,10 +7,14 @@ from app.config.settings import settings
 from app.utils.logging import logger
 from app.database.base import Base
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_SQLITE_PATH = os.path.join(BASE_DIR, "context_ai.db").replace("\\", "/")
+DEFAULT_SQLITE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH}"
+
 def create_db_engine():
     """
     Initializes a production-grade PostgreSQL database engine with connection pooling.
-    Enforces PostgreSQL in production environments (Render) and falls back to SQLite only during local dev.
+    Enforces PostgreSQL in production environments (Render) and falls back to absolute local SQLite path in local dev.
     """
     is_production = bool(os.getenv("RENDER") or os.getenv("ENVIRONMENT") == "production")
     raw_url = settings.DATABASE_URL.strip() if settings.DATABASE_URL else ""
@@ -22,8 +26,8 @@ def create_db_engine():
     if not raw_url:
         if is_production:
             raise RuntimeError("CRITICAL: DATABASE_URL environment variable is missing in production deployment! PostgreSQL is required.")
-        logger.warning("No DATABASE_URL configured. Falling back to local development SQLite engine.")
-        return create_engine("sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
+        logger.warning(f"No DATABASE_URL configured. Using absolute local SQLite database: {DEFAULT_SQLITE_URL}")
+        return create_engine(DEFAULT_SQLITE_URL, connect_args={"check_same_thread": False})
 
     # If PostgreSQL URL is provided
     if "postgresql" in raw_url:
