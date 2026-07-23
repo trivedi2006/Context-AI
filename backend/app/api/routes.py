@@ -40,7 +40,7 @@ async def health_check(
     Returns live operational status of PostgreSQL database, Google OAuth, Groq API, and Qdrant Cloud.
     Database check performs an actual 'SELECT 1' query on PostgreSQL.
     """
-    db_ok = check_database_health()
+    db_ok, db_latency = check_database_health()
     qdrant_ok = await vector_service.check_health()
     groq_ok = await groq_service.check_health()
     google_auth_ok = bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
@@ -57,10 +57,10 @@ async def readiness_probe():
     """
     Readiness probe confirming database connectivity and server operational state.
     """
-    db_ok = check_database_health()
+    db_ok, db_latency = check_database_health()
     if not db_ok:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
-    return {"status": "ready"}
+    return {"status": "ready", "db_latency_ms": db_latency}
 
 @router.get("/live")
 async def liveness_probe():

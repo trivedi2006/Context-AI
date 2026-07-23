@@ -1,5 +1,6 @@
 import os
-from typing import Generator
+import time
+from typing import Generator, Tuple
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from app.config.settings import settings
@@ -8,38 +9,46 @@ from app.database.base import Base
 
 def create_db_engine():
     """
-    Initializes a production-ready database engine with pre-ping validation.
-    Falls back gracefully to local SQLite if DATABASE_URL is missing or unreachable.
+    Initializes a production-grade PostgreSQL database engine with connection pooling.
+    Enforces PostgreSQL in production environments (Render) and falls back to SQLite only during local dev.
     """
-    db_url = settings.DATABASE_URL.strip() if settings.DATABASE_URL else ""
-    
-    if not db_url:
-        logger.warning("No DATABASE_URL provided. Defaulting to local SQLite database.")
-        return create_engine("sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
+    is_production = bool(os.getenv("RENDER") or os.getenv("ENVIRONMENT") == "production")
+    raw_url = settings.DATABASE_URL.strip() if settings.DATABASE_URL else ""
 
     # Standardize postgresql driver scheme
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    if raw_url.startswith("postgres://"):
+        raw_url = raw_url.replace("postgres://", "postgresql://", 1)
 
-    try:
-        if "sqlite" in db_url:
-            eng = create_engine(db_url, connect_args={"check_same_thread": False})
-        else:
+    if not raw_url:
+        if is_production:
+            raise RuntimeError("CRITICAL: DATABASE_URL environment variable is missing in production deployment! PostgreSQL is required.")
+        logger.warning("No DATABASE_URL configured. Falling back to local development SQLite engine.")
+        return create_engine("sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
+
+    # If PostgreSQL URL is provided
+    if "postgresql" in raw_url:
+        try:
+            logger.info("Initializing production PostgreSQL database engine...")
             eng = create_engine(
-                db_url,
+                raw_url,
                 pool_pre_ping=True,
                 pool_size=10,
                 max_overflow=20,
                 pool_recycle=300,
             )
-        # Verify connection
-        with eng.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info("Database engine initialized and connected successfully.")
-        return eng
-    except Exception as e:
-        logger.error(f"Failed to connect to primary database ({str(e)}). Falling back to local SQLite database.")
-        return create_engine("sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.info("Successfully established connection to PostgreSQL database server.")
+            return eng
+        except Exception as e:
+            logger.error(f"Failed to connect to PostgreSQL database: {str(e)}")
+            if is_production:
+                raise RuntimeError(f"Production PostgreSQL connection failure: {str(e)}")
+            logger.warning("Falling back to local SQLite engine due to unreachable PostgreSQL server.")
+            return create_engine("sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
+
+    # Local SQLite fallback
+    return create_engine(raw_url if raw_url else "sqlite:///./context_ai.db", connect_args={"check_same_thread": False})
 
 engine = create_db_engine()
 
@@ -47,29 +56,38 @@ engine = create_db_engine()
 try:
     from app.models.user import User  # Import models to register schemas
     Base.metadata.create_all(bind=engine)
-    logger.info("Database tables verified and initialized.")
+    logger.info("Database tables verified and initialized successfully.")
 except Exception as e:
-    logger.error(f"Error initializing database tables: {str(e)}")
+    logger.error(f"Error initializing database schemas: {str(e)}")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db() -> Generator[Session, None, None]:
     """
-    Dependency returning a database session. Guaranteed to yield an active session.
+    Dependency yielding a database session. Guaranteed connection cleanup and automatic rollback on error.
     """
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database session error (rolled back): {str(e)}")
+        raise
     finally:
         db.close()
 
-def check_database_health() -> bool:
+def check_database_health() -> Tuple[bool, float]:
+    """
+    Health check executing 'SELECT 1' against the database and returning (is_healthy, latency_ms).
+    """
     if engine is None:
-        return False
+        return False, 0.0
+    t0 = time.perf_counter()
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        return True
+        latency_ms = (time.perf_counter() - t0) * 1000
+        return True, round(latency_ms, 2)
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")
-        return False
+        return False, 0.0
