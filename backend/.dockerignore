@@ -1,0 +1,22 @@
+# Docker Ignore Configuration for Backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.git/
+.gitignore
+.env
+.env.local
+venv/
+.venv/
+*.db
+*.sqlite
+*.sqlite3
+node_modules/
+.next/
+dist/
+build/
+*.log
+scratch/
