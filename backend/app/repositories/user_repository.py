@@ -24,12 +24,8 @@ class UserRepository:
     def get_by_id(db: Session, user_id: Union[uuid.UUID, str]) -> Optional[User]:
         if not user_id:
             return None
-        if isinstance(user_id, str):
-            try:
-                user_id = uuid.UUID(user_id)
-            except ValueError:
-                return None
-        stmt = select(User).where(User.id == user_id)
+        user_id_str = str(user_id)
+        stmt = select(User).where(User.id == user_id_str)
         return db.execute(stmt).scalar_one_or_none()
 
     @staticmethod
