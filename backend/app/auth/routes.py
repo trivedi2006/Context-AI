@@ -158,7 +158,10 @@ async def google_callback(
         token = create_access_token(user_id_str, user.email)
 
         # Determine target frontend URL matching current origin host
-        target_frontend = settings.FRONTEND_URL.rstrip('/')
+        target_frontend = "https://context-ai-v1.vercel.app"
+        if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
+            target_frontend = settings.FRONTEND_URL.rstrip('/')
+
         if "127.0.0.1" in str(request.base_url) or "localhost" in str(request.base_url):
             target_frontend = "http://127.0.0.1:3000"
 
