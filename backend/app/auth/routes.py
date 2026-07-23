@@ -140,27 +140,42 @@ async def google_callback(
     """
     Handles Google OAuth redirect code, authenticates user, and redirects to frontend.
     """
-    redirect_uri = get_callback_uri(request)
-    google_data = await exchange_google_code_for_token(code, redirect_uri)
+    try:
+        redirect_uri = get_callback_uri(request)
+        logger.info(f"[Google OAuth Callback Started] Redirect URI: {redirect_uri}")
 
-    if not google_data:
+        google_data = await exchange_google_code_for_token(code, redirect_uri)
+
+        if not google_data:
+            logger.error(f"[Google OAuth Failed] Token exchange returned empty payload for code.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to authenticate with Google. Invalid or expired authorization code."
+            )
+
+        user = AuthService.find_or_create_google_user(db, google_data)
+        user_id_str = str(user.id)
+        token = create_access_token(user_id_str, user.email)
+
+        # Determine target frontend URL matching current origin host
+        target_frontend = settings.FRONTEND_URL.rstrip('/')
+        if "127.0.0.1" in str(request.base_url) or "localhost" in str(request.base_url):
+            target_frontend = "http://127.0.0.1:3000"
+
+        redirect_url = f"{target_frontend}/?token={token}"
+        logger.info(f"[Google OAuth Success] User: {user.email} (id={user_id_str}). Redirecting to: {redirect_url}")
+
+        redirect_response = RedirectResponse(url=redirect_url)
+        set_auth_cookie(redirect_response, token, remember_me=True)
+        return redirect_response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[Google OAuth Internal Error]: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to authenticate with Google."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An internal error occurred during Google authentication: {str(e)}"
         )
-
-    user = AuthService.find_or_create_google_user(db, google_data)
-    token = create_access_token(user.id, user.email)
-
-    # Determine target frontend URL matching current origin host
-    target_frontend = settings.FRONTEND_URL.rstrip('/')
-    if "127.0.0.1" in str(request.base_url) or "localhost" in str(request.base_url):
-        target_frontend = "http://127.0.0.1:3000"
-
-    redirect_url = f"{target_frontend}/?token={token}"
-    redirect_response = RedirectResponse(url=redirect_url)
-    set_auth_cookie(redirect_response, token, remember_me=True)
-    return redirect_response
 
 @router.post("/logout")
 async def logout(response: Response):
