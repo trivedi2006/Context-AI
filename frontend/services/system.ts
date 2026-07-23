@@ -1,32 +1,42 @@
 import axios from 'axios';
 import { HealthStatus } from '@/types';
 
+export const RENDER_BACKEND_URL = 'https://context-ai-6t9i.onrender.com';
+
 export const getApiBaseUrl = (): string => {
+  // 1. Explicit Environment Variables (Next.js / Vite / Vercel Build env)
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
   }
+  if (process.env.VITE_API_URL) {
+    return process.env.VITE_API_URL.replace(/\/$/, '');
+  }
+
+  // 2. Browser Host Check
   if (typeof window !== 'undefined') {
-    const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-    return `${window.location.protocol}//${host}:8000`;
+    const hostname = window.location.hostname;
+    // Local Development
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:8000';
+    }
   }
-  return 'http://127.0.0.1:8000';
+
+  // 3. Fallback for deployed production hostings (Vercel -> Render)
+  return RENDER_BACKEND_URL;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 apiClient.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
-    const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-    config.baseURL = `${window.location.protocol}//${host}:8000`;
-  }
+  config.baseURL = getApiBaseUrl();
   return config;
 });
 

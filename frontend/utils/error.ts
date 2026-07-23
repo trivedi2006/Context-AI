@@ -33,7 +33,7 @@ export const extractErrorMessage = (err: any, fallbackMessage: string = 'An erro
   // 3. Axios or Network Error Message
   if (err.message && typeof err.message === 'string') {
     if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
-      return 'Unable to connect to the backend server. Please verify the API is running at http://127.0.0.1:8000.';
+      return 'Unable to connect to the backend server. Please verify the backend API service is running and accessible.';
     }
     return err.message;
   }

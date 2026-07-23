@@ -1,5 +1,5 @@
 import { Citation } from '@/types';
-import { API_BASE_URL } from './system';
+import { API_BASE_URL, getApiBaseUrl } from './system';
 
 export interface StreamChatCallbacks {
   onMetadata?: (citations: Citation[], retrievalTimeMs: number) => void;
@@ -15,7 +15,8 @@ export const chatService = {
     signal?: AbortSignal
   ): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,11 +1,15 @@
 import axios from 'axios';
 import { HealthStatus, UploadResponse, Citation } from '@/types';
-
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+import { API_BASE_URL, getApiBaseUrl } from '@/services/system';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000,
+});
+
+apiClient.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
+  return config;
 });
 
 export const checkHealth = async (): Promise<HealthStatus> => {

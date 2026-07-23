@@ -1,10 +1,15 @@
 import axios, { AxiosProgressEvent } from 'axios';
 import { UploadResponse } from '@/types';
-import { API_BASE_URL } from './system';
+import { API_BASE_URL, getApiBaseUrl } from './system';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 120000, // 2 minutes for processing large PDFs
+});
+
+apiClient.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
+  return config;
 });
 
 export const documentService = {
