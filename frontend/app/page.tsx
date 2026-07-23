@@ -21,7 +21,16 @@ import { chatService } from '@/services/chat';
 function DashboardContent() {
   const { user, logout, isLoading: isAuthLoading } = useAuth();
   const [showAuthOverlay, setShowAuthOverlay] = useState(false);
-  const [viewMode, setViewMode] = useState<'landing' | 'workspace'>('landing');
+  const [viewMode, setViewMode] = useState<'landing' | 'workspace'>('workspace');
+
+  // Automatically transition to workspace whenever user is authenticated
+  useEffect(() => {
+    if (user) {
+      setViewMode('workspace');
+    } else {
+      setViewMode('landing');
+    }
+  }, [user]);
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [uploadedDoc, setUploadedDoc] = useState<UploadResponse | null>(null);
