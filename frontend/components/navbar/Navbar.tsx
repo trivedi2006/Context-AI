@@ -13,9 +13,10 @@ interface NavbarProps {
   uploadedDoc: UploadResponse | null;
   isProcessing?: boolean;
   onOpenAuth?: () => void;
+  onLogoClick?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ health, uploadedDoc, isProcessing, onOpenAuth }) => {
+export const Navbar: React.FC<NavbarProps> = ({ health, uploadedDoc, isProcessing, onOpenAuth, onLogoClick }) => {
   const { user } = useAuth();
   const isBackendOk = health?.backend === 'ok';
 
@@ -27,7 +28,10 @@ export const Navbar: React.FC<NavbarProps> = ({ health, uploadedDoc, isProcessin
       className="h-[68px] w-full px-6 flex items-center justify-between border-b border-white/[0.06] bg-[#111111]/80 backdrop-blur-md relative z-40 select-none"
     >
       {/* Left: Logo & Product Name */}
-      <div className="flex items-center gap-3">
+      <button
+        onClick={onLogoClick}
+        className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer text-left border-none bg-transparent p-0 outline-none"
+      >
         <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">
           <svg
             className="w-4 h-4 text-white"
@@ -49,7 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({ health, uploadedDoc, isProcessin
             AI Workspace
           </span>
         </div>
-      </div>
+      </button>
 
       {/* Center: Soft Connection Status Indicator */}
       <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#171717]">

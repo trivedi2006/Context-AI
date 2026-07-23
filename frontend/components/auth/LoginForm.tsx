@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { GoogleButton } from './GoogleButton';
 import { Mail, Lock, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils/error';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -42,8 +43,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
       await login({ email: email.trim(), password, remember_me: rememberMe });
       onSuccessRedirect();
     } catch (err: any) {
-      const detail = err.response?.data?.detail || err.message || 'Invalid email or password.';
-      setErrorMessage(detail);
+      const message = extractErrorMessage(err, 'Invalid email or password.');
+      setErrorMessage(message);
       triggerErrorShake();
     } finally {
       setIsSubmitting(false);

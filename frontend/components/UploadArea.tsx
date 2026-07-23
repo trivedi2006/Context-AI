@@ -30,7 +30,7 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ onUploadSuccess }) => {
   const processFile = async (file: File) => {
     setErrorMessage(null);
 
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endswith('.pdf')) {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setErrorMessage('Please select a valid PDF file (.pdf)');
       return;
     }

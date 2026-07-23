@@ -83,6 +83,7 @@ export interface UserLogin {
 export interface AuthMessageResponse {
   status: 'success' | 'error';
   message: string;
+  token?: string;
   user?: UserResponse;
 }
 

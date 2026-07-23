@@ -19,8 +19,9 @@ import { documentService } from '@/services/document';
 import { chatService } from '@/services/chat';
 
 function DashboardContent() {
-  const { user, isLoading: isAuthLoading } = useAuth();
+  const { user, logout, isLoading: isAuthLoading } = useAuth();
   const [showAuthOverlay, setShowAuthOverlay] = useState(false);
+  const [viewMode, setViewMode] = useState<'landing' | 'workspace'>('landing');
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [uploadedDoc, setUploadedDoc] = useState<UploadResponse | null>(null);
@@ -245,9 +246,16 @@ function DashboardContent() {
     );
   }
 
-  // 2. Require Login First: Show full-screen Auth Login page if user is not authenticated
-  if (!user) {
-    return <AuthScreen onSuccessRedirect={() => setShowAuthOverlay(false)} />;
+  // 2. Render landing page if unauthenticated OR if explicitly viewing landing page
+  if (!user || viewMode === 'landing') {
+    return (
+      <AuthScreen
+        onSuccessRedirect={() => setViewMode('workspace')}
+        onEnterWorkspace={() => setViewMode('workspace')}
+        isAuthenticated={!!user}
+        onLogout={logout}
+      />
+    );
   }
 
   // 3. Render Main Workspace when authenticated
@@ -262,6 +270,7 @@ function DashboardContent() {
         uploadedDoc={uploadedDoc}
         isProcessing={isProcessing}
         onOpenAuth={() => setShowAuthOverlay(true)}
+        onLogoClick={() => setViewMode('landing')}
       />
 
       {/* Main Split Layout: Workspace 28% / Conversation 72% */}

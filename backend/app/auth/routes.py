@@ -1,3 +1,4 @@
+import time
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.responses import RedirectResponse
@@ -29,24 +30,47 @@ def set_auth_cookie(response: Response, token: str, remember_me: bool = True):
     )
 
 @router.post("/signup", response_model=AuthMessageResponse)
-async def signup(
+def signup(
     signup_data: UserSignup,
     response: Response,
     db: Session = Depends(get_db)
 ):
     """
     Registers a new local user with bcrypt password and sets HTTP-only JWT cookie.
+    Offloaded to FastAPI threadpool worker to prevent blocking event loop.
     """
+    t_start = time.perf_counter()
+    logger.info(f"[Signup Request Started] Email: {signup_data.email}")
+
+    # 1. Existing user check
+    t0 = time.perf_counter()
     existing_user = AuthService.get_user_by_email(db, signup_data.email)
+    t_lookup_ms = (time.perf_counter() - t0) * 1000
+
     if existing_user:
+        logger.warning(f"[Signup Failed] Email already registered: {signup_data.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email address already exists. Please log in."
         )
 
+    # 2. User Creation (Password Hashing + DB Insert & Commit)
+    t1 = time.perf_counter()
     user = AuthService.create_user(db, signup_data)
+    t_create_ms = (time.perf_counter() - t1) * 1000
+
+    # 3. JWT Token Generation & Cookie Set
+    t2 = time.perf_counter()
     token = create_access_token(user.id, user.email)
     set_auth_cookie(response, token, remember_me=True)
+    t_token_ms = (time.perf_counter() - t2) * 1000
+
+    t_total_ms = (time.perf_counter() - t_start) * 1000
+    logger.info(
+        f"[Signup Request Complete] User: {user.email} (id={user.id}). "
+        f"Metrics: lookup={t_lookup_ms:.1f}ms, create={t_create_ms:.1f}ms, "
+        f"jwt={t_token_ms:.1f}ms, total={t_total_ms:.1f}ms"
+    )
 
     return AuthMessageResponse(
         status="success",
@@ -56,16 +80,21 @@ async def signup(
     )
 
 @router.post("/login", response_model=AuthMessageResponse)
-async def login(
+def login(
     login_data: UserLogin,
     response: Response,
     db: Session = Depends(get_db)
 ):
     """
     Authenticates user credentials and sets HTTP-only JWT cookie.
+    Offloaded to FastAPI threadpool worker.
     """
+    t_start = time.perf_counter()
+    logger.info(f"[Login Request Started] Email: {login_data.email}")
+
     user = AuthService.authenticate_user(db, login_data.email, login_data.password)
     if not user:
+        logger.warning(f"[Login Failed] Invalid credentials for email: {login_data.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email address or password. Please try again."
@@ -73,6 +102,9 @@ async def login(
 
     token = create_access_token(user.id, user.email)
     set_auth_cookie(response, token, remember_me=login_data.remember_me or False)
+
+    t_total_ms = (time.perf_counter() - t_start) * 1000
+    logger.info(f"[Login Request Complete] User: {user.email} in {t_total_ms:.1f}ms")
 
     return AuthMessageResponse(
         status="success",

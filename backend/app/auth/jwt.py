@@ -8,10 +8,10 @@ from app.utils.logging import logger
 
 def hash_password(password: str) -> str:
     """
-    Hashes raw password string using bcrypt directly.
+    Hashes raw password string using bcrypt with cost factor rounds=10.
     """
     pwd_bytes = password.encode('utf-8')[:72]
-    salt = bcrypt.gensalt()
+    salt = bcrypt.gensalt(rounds=10)
     return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

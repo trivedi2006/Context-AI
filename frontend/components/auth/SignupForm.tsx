@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { GoogleButton } from './GoogleButton';
 import { User as UserIcon, Mail, Lock, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils/error';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -55,8 +56,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       await signup({ name: name.trim(), email: email.trim(), password });
       onSuccessRedirect();
     } catch (err: any) {
-      const detail = err.response?.data?.detail || err.message || 'Failed to create account.';
-      setErrorMessage(detail);
+      const message = extractErrorMessage(err, 'Failed to create account.');
+      setErrorMessage(message);
       triggerErrorShake();
     } finally {
       setIsSubmitting(false);

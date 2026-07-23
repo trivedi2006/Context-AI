@@ -6,9 +6,10 @@ export const getApiBaseUrl = (): string => {
     return process.env.NEXT_PUBLIC_API_URL;
   }
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
+    const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
+    return `${window.location.protocol}//${host}:8000`;
   }
-  return 'http://localhost:8000';
+  return 'http://127.0.0.1:8000';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -23,7 +24,8 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use((config) => {
   if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
-    config.baseURL = `${window.location.protocol}//${window.location.hostname}:8000`;
+    const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
+    config.baseURL = `${window.location.protocol}//${host}:8000`;
   }
   return config;
 });
