@@ -52,6 +52,23 @@ async def health_check(
         qdrant="connected" if qdrant_ok else "unavailable"
     )
 
+@router.get("/ready")
+async def readiness_probe():
+    """
+    Readiness probe confirming database connectivity and server operational state.
+    """
+    db_ok = check_database_health()
+    if not db_ok:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+    return {"status": "ready"}
+
+@router.get("/live")
+async def liveness_probe():
+    """
+    Liveness probe confirming server event loop is active.
+    """
+    return {"status": "live"}
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),

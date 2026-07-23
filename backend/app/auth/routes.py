@@ -113,13 +113,21 @@ def login(
         user=UserResponse.model_validate(user)
     )
 
+def get_callback_uri(request: Request) -> str:
+    """
+    Constructs accurate OAuth callback URI, enforcing HTTPS scheme on production reverse proxies (Render).
+    """
+    base = str(request.base_url).rstrip('/')
+    if "localhost" not in base and "127.0.0.1" not in base and base.startswith("http://"):
+        base = base.replace("http://", "https://", 1)
+    return f"{base}/auth/google/callback"
+
 @router.get("/google/login")
 async def google_login(request: Request):
     """
     Redirects user directly to Google OAuth consent screen.
     """
-    redirect_uri = f"{request.base_url}auth/google/callback"
-    redirect_uri = redirect_uri.replace("//auth", "/auth")
+    redirect_uri = get_callback_uri(request)
     auth_url = get_google_auth_url(redirect_uri)
     return RedirectResponse(url=auth_url)
 
@@ -132,9 +140,7 @@ async def google_callback(
     """
     Handles Google OAuth redirect code, authenticates user, and redirects to frontend.
     """
-    redirect_uri = f"{request.base_url}auth/google/callback"
-    redirect_uri = redirect_uri.replace("//auth", "/auth")
-
+    redirect_uri = get_callback_uri(request)
     google_data = await exchange_google_code_for_token(code, redirect_uri)
 
     if not google_data:
@@ -147,11 +153,9 @@ async def google_callback(
     token = create_access_token(user.id, user.email)
 
     # Determine target frontend URL matching current origin host
-    target_frontend = settings.FRONTEND_URL
-    if "127.0.0.1" in str(request.base_url):
+    target_frontend = settings.FRONTEND_URL.rstrip('/')
+    if "127.0.0.1" in str(request.base_url) or "localhost" in str(request.base_url):
         target_frontend = "http://127.0.0.1:3000"
-    elif "localhost" in str(request.base_url):
-        target_frontend = "http://localhost:3000"
 
     redirect_url = f"{target_frontend}/?token={token}"
     redirect_response = RedirectResponse(url=redirect_url)
