@@ -376,6 +376,40 @@ pre code {
   z-index: 2;
 }
 
+/* Responsive Media Queries to prevent 3D stage card from covering hero text */
+@media (max-width: 1120px) {
+  .cinematic-theme .hero-inner {
+    display: flex;
+    flex-direction: column;
+    padding: 40px 0 60px;
+    align-items: flex-start;
+  }
+
+  .cinematic-theme .hero-copy {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+  }
+
+  .cinematic-theme .stage {
+    position: relative;
+    top: 0;
+    right: 0;
+    width: 100%;
+    max-width: 360px;
+    min-width: unset;
+    margin: 32px auto 0;
+    z-index: 1;
+    transform: scale(0.85);
+  }
+}
+
+@media (max-width: 639px) {
+  .cinematic-theme .stage {
+    display: none;
+  }
+}
+
 .cinematic-theme .stage::before {
   content: "";
   position: absolute;
