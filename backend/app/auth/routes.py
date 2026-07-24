@@ -191,6 +191,25 @@ async def logout(response: Response):
 @router.get("/me", response_model=UserResponse)
 async def get_me(user = Depends(get_current_user)):
     """
-    Returns the currently authenticated user profile from PostgreSQL.
+    Returns the currently authenticated user profile.
     """
     return UserResponse.model_validate(user)
+
+@router.get("/admin/users")
+def get_all_registered_users(db: Session = Depends(get_db)):
+    """
+    Returns a list of all registered user accounts stored in the active database.
+    """
+    from app.models.user import User
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [
+        {
+            "id": str(u.id),
+            "name": u.name,
+            "email": u.email,
+            "provider": u.provider,
+            "profile_picture": u.profile_picture,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in users
+    ]
