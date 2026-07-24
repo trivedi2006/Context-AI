@@ -73,7 +73,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-wrap items-center gap-2 px-1"
+            className="flex items-center gap-2 px-1 overflow-x-auto no-scrollbar py-1 touch-pan-x"
           >
             {SUGGESTED_QUESTIONS.map((q, idx) => (
               <motion.button
@@ -84,7 +84,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 whileHover={{ y: -2, backgroundColor: '#232323' }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setInput(q)}
-                className="px-3 py-1.5 rounded-xl bg-[#171717] border border-white/[0.06] text-xs font-medium text-white/75 hover:text-white transition-colors cursor-pointer shadow-sm"
+                className="px-3 py-1.5 rounded-xl bg-[#171717] border border-white/[0.06] text-xs font-medium text-white/75 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0 whitespace-nowrap"
               >
                 {q}
               </motion.button>

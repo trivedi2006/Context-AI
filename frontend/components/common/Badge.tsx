@@ -7,6 +7,7 @@ interface BadgeProps {
   variant?: 'default' | 'success' | 'warning' | 'error' | 'outline';
   size?: 'sm' | 'md';
   icon?: React.ReactNode;
+  className?: string;
 }
 
 export const Badge: React.FC<BadgeProps> = ({
@@ -14,6 +15,7 @@ export const Badge: React.FC<BadgeProps> = ({
   variant = 'default',
   size = 'md',
   icon,
+  className = '',
 }) => {
   const baseStyle = 'inline-flex items-center gap-1.5 font-mono tracking-tight rounded-full border transition-all';
   
@@ -31,7 +33,7 @@ export const Badge: React.FC<BadgeProps> = ({
   };
 
   return (
-    <span className={`${baseStyle} ${sizeStyles[size]} ${variantStyles[variant]}`}>
+    <span className={`${baseStyle} ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}>
       {icon}
       {children}
     </span>

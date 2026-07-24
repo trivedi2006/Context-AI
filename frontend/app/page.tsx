@@ -22,6 +22,7 @@ function DashboardContent() {
   const { user, logout, isLoading: isAuthLoading } = useAuth();
   const [showAuthOverlay, setShowAuthOverlay] = useState(false);
   const [viewMode, setViewMode] = useState<'landing' | 'workspace'>('workspace');
+  const [mobileTab, setMobileTab] = useState<'workspace' | 'chat'>('workspace');
 
   // Automatically transition to workspace whenever user is authenticated
   useEffect(() => {
@@ -115,6 +116,8 @@ function DashboardContent() {
 
       setUploadedDoc(response);
       setMessages([]);
+      // Automatically switch to chat tab on mobile after successful upload
+      setMobileTab('chat');
     } catch (err: any) {
       setProgressState({
         step: 'error',
@@ -138,6 +141,7 @@ function DashboardContent() {
         percentage: 0,
         currentStepMessage: '',
       });
+      setMobileTab('workspace');
     }
   };
 
@@ -247,7 +251,7 @@ function DashboardContent() {
     return (
       <div className="w-full h-screen flex flex-col items-center justify-center bg-[#111111] text-white">
         <BackgroundCanvas />
-        <div className="flex flex-col items-center gap-4 relative z-10">
+        <div className="flex flex-col items-center gap-4 relative z-10 px-4 text-center">
           <div className="w-9 h-9 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           <p className="text-xs font-mono text-white/50 tracking-wider">Loading Context AI Session...</p>
         </div>
@@ -282,14 +286,40 @@ function DashboardContent() {
         onLogoClick={() => setViewMode('landing')}
       />
 
-      {/* Main Split Layout: Workspace 28% / Conversation 72% */}
-      <main className="flex-1 w-full flex overflow-hidden relative z-10">
-        {/* Workspace Panel (28%) */}
+      {/* Mobile / Tablet Tab Switcher (Visible only on < lg screens) */}
+      <div className="flex lg:hidden w-full border-b border-white/[0.08] bg-[#141414] shrink-0 relative z-20">
+        <button
+          onClick={() => setMobileTab('workspace')}
+          className={`flex-1 py-3 text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer text-center ${
+            mobileTab === 'workspace'
+              ? 'text-white border-b-2 border-[#65f4a6] bg-white/[0.04]'
+              : 'text-white/50 hover:text-white/80'
+          }`}
+        >
+          📄 Workspace
+        </button>
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={`flex-1 py-3 text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer text-center ${
+            mobileTab === 'chat'
+              ? 'text-[#65f4a6] border-b-2 border-[#65f4a6] bg-white/[0.04]'
+              : 'text-white/50 hover:text-white/80'
+          }`}
+        >
+          💬 Conversation {messages.length > 0 && `(${messages.length / 2})`}
+        </button>
+      </div>
+
+      {/* Main Split Layout: Mobile Tab OR Responsive Desktop 28%/72% Grid */}
+      <main className="flex-1 w-full flex flex-col lg:flex-row overflow-hidden relative z-10">
+        {/* Workspace Panel (Mobile: Tab controlled / Desktop: Always visible left column) */}
         <motion.section
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          className="w-[28%] min-w-[280px] max-w-[360px] h-full border-r border-white/[0.06] bg-[#141414]/70 backdrop-blur-md flex flex-col p-6 overflow-y-auto space-y-6 shrink-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className={`${
+            mobileTab === 'workspace' ? 'flex' : 'hidden'
+          } lg:flex w-full lg:w-[320px] xl:w-[360px] h-full border-r border-white/[0.06] bg-[#141414]/70 backdrop-blur-md flex-col p-4 sm:p-6 overflow-y-auto space-y-6 shrink-0`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold tracking-wider uppercase text-white/40 heading-display">
@@ -322,18 +352,20 @@ function DashboardContent() {
           )}
         </motion.section>
 
-        {/* Conversation Hero Panel (72%) */}
+        {/* Conversation Hero Panel (Mobile: Tab controlled / Desktop: Always visible right hero panel) */}
         <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="flex-1 h-full flex flex-col justify-between bg-[#111111]/90 backdrop-blur-sm overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className={`${
+            mobileTab === 'chat' ? 'flex' : 'hidden'
+          } lg:flex flex-1 w-full h-full flex-col justify-between bg-[#111111]/90 backdrop-blur-sm overflow-hidden`}
         >
           {/* Chat Stream Area */}
           {messages.length === 0 ? (
             <EmptyChatState />
           ) : (
-            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6">
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10 space-y-6">
               {messages.map((msg) => (
                 <ChatMessageItem key={msg.id} message={msg} />
               ))}
@@ -342,9 +374,9 @@ function DashboardContent() {
 
           {/* Pinned Input Area at Bottom */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.4 }}
           >
             <ChatInput
               onSendMessage={handleSendMessage}
