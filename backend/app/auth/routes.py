@@ -213,3 +213,76 @@ def get_all_registered_users(db: Session = Depends(get_db)):
         }
         for u in users
     ]
+
+@router.get("/admin/database")
+def get_database_info(db: Session = Depends(get_db)):
+    """
+    Diagnostic probe returning active database connection parameters, engine dialect, server version, and pool metrics.
+    """
+    from datetime import datetime
+    from sqlalchemy import text
+    from app.database.session import engine
+
+    raw_url = str(engine.url)
+    masked_url = raw_url
+    if "@" in raw_url:
+        prefix, rest = raw_url.split("@", 1)
+        if ":" in prefix:
+            scheme_user, _ = prefix.rsplit(":", 1)
+            masked_url = f"{scheme_user}:****@{rest}"
+
+    server_version = "Unknown"
+    try:
+        res = db.execute(text("SELECT version();")).fetchone()
+        if res:
+            server_version = res[0]
+    except Exception as e:
+        server_version = str(e)
+
+    pool_size = 5
+    if hasattr(engine.pool, "size"):
+        try:
+            pool_size = engine.pool.size()
+        except Exception:
+            pool_size = 5
+
+    return {
+        "database": masked_url,
+        "dialect": engine.dialect.name,
+        "server_version": server_version,
+        "pool_size": pool_size,
+        "checked_at": datetime.utcnow().isoformat() + "Z"
+    }
+
+@router.post("/admin/test-user")
+def create_test_user_probe(db: Session = Depends(get_db)):
+    """
+    Temporary diagnostic endpoint creating a test user record directly in Neon PostgreSQL and confirming immediate persistence.
+    """
+    import uuid
+    from app.repositories.user_repository import UserRepository
+
+    test_email = f"test_neon_{uuid.uuid4().hex[:6]}@example.com"
+    user_data = {
+        "name": "Test User",
+        "email": test_email,
+        "password_hash": "$2b$10$test_hash_sample_verification_key",
+        "provider": "local"
+    }
+    user = UserRepository.create(db, user_data)
+    
+    # Query back immediately
+    queried_user = UserRepository.get_by_email(db, test_email)
+    
+    return {
+        "status": "success",
+        "message": "Test user created and verified in Neon PostgreSQL",
+        "created_user": {
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email,
+            "provider": user.provider,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        },
+        "queried_user_found": queried_user is not None
+    }

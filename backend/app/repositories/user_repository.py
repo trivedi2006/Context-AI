@@ -35,40 +35,64 @@ class UserRepository:
 
     @staticmethod
     def create(db: Session, user_data: Dict[str, Any]) -> User:
-        user = User(
-            name=user_data.get("name", "").strip(),
-            email=user_data.get("email", "").lower().strip(),
-            password_hash=user_data.get("password_hash"),
-            google_id=user_data.get("google_id"),
-            profile_picture=user_data.get("profile_picture"),
-            provider=user_data.get("provider", "local")
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        logger.info(f"User Created: {user.email} (id={user.id})")
-        return user
+        """
+        Inserts a new User into Neon PostgreSQL with explicit commit, refresh, and rollback error handling.
+        """
+        try:
+            user = User(
+                name=user_data.get("name", "").strip(),
+                email=user_data.get("email", "").lower().strip(),
+                password_hash=user_data.get("password_hash"),
+                google_id=user_data.get("google_id"),
+                profile_picture=user_data.get("profile_picture"),
+                provider=user_data.get("provider", "local")
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info(f"[DB COMMIT SUCCESS] User inserted into Neon PostgreSQL: {user.email} (id={user.id})")
+            return user
+        except Exception as e:
+            db.rollback()
+            logger.exception(f"[DB ROLLBACK] User creation failed for email={user_data.get('email')}: {str(e)}")
+            raise
 
     @staticmethod
     def update(db: Session, user: User, update_data: Dict[str, Any]) -> User:
-        updated = False
-        for key, value in update_data.items():
-            if hasattr(user, key) and getattr(user, key) != value:
-                setattr(user, key, value)
-                updated = True
-        if updated:
-            db.commit()
-            db.refresh(user)
-            logger.info(f"User Updated: {user.email} (id={user.id})")
-        return user
+        """
+        Modifies a User object with explicit commit, refresh, and rollback error handling.
+        """
+        try:
+            updated = False
+            for key, value in update_data.items():
+                if hasattr(user, key) and getattr(user, key) != value:
+                    setattr(user, key, value)
+                    updated = True
+            if updated:
+                db.commit()
+                db.refresh(user)
+                logger.info(f"[DB COMMIT SUCCESS] User updated in Neon PostgreSQL: {user.email} (id={user.id})")
+            return user
+        except Exception as e:
+            db.rollback()
+            logger.exception(f"[DB ROLLBACK] User update failed for {user.email}: {str(e)}")
+            raise
 
     @staticmethod
     def delete(db: Session, user_id: Union[uuid.UUID, str]) -> bool:
-        user = UserRepository.get_by_id(db, user_id)
-        if not user:
-            return False
-        email = user.email
-        db.delete(user)
-        db.commit()
-        logger.info(f"User Deleted: {email} (id={user_id})")
-        return True
+        """
+        Deletes a User from Neon PostgreSQL with explicit commit and rollback error handling.
+        """
+        try:
+            user = UserRepository.get_by_id(db, user_id)
+            if not user:
+                return False
+            email = user.email
+            db.delete(user)
+            db.commit()
+            logger.info(f"[DB COMMIT SUCCESS] User deleted from Neon PostgreSQL: {email} (id={user_id})")
+            return True
+        except Exception as e:
+            db.rollback()
+            logger.exception(f"[DB ROLLBACK] User deletion failed for user_id={user_id}: {str(e)}")
+            raise
