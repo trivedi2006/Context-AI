@@ -1,5 +1,6 @@
 import uuid
 from typing import Optional, Dict, Any, Union
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.user import User
@@ -36,7 +37,7 @@ class UserRepository:
     @staticmethod
     def create(db: Session, user_data: Dict[str, Any]) -> User:
         """
-        Inserts a new User into Neon PostgreSQL with explicit commit, refresh, and rollback error handling.
+        Inserts a new User into Neon PostgreSQL with explicit commit, refresh, and rollback exception logging.
         """
         try:
             user = User(
@@ -45,7 +46,10 @@ class UserRepository:
                 password_hash=user_data.get("password_hash"),
                 google_id=user_data.get("google_id"),
                 profile_picture=user_data.get("profile_picture"),
-                provider=user_data.get("provider", "local")
+                provider=user_data.get("provider", "local"),
+                is_active=user_data.get("is_active", True),
+                is_verified=user_data.get("is_verified", True),
+                last_login=user_data.get("last_login")
             )
             db.add(user)
             db.commit()
@@ -60,7 +64,7 @@ class UserRepository:
     @staticmethod
     def update(db: Session, user: User, update_data: Dict[str, Any]) -> User:
         """
-        Modifies a User object with explicit commit, refresh, and rollback error handling.
+        Modifies a User object with explicit commit, refresh, and rollback exception logging.
         """
         try:
             updated = False
@@ -69,6 +73,7 @@ class UserRepository:
                     setattr(user, key, value)
                     updated = True
             if updated:
+                user.updated_at = datetime.now(timezone.utc)
                 db.commit()
                 db.refresh(user)
                 logger.info(f"[DB COMMIT SUCCESS] User updated in Neon PostgreSQL: {user.email} (id={user.id})")
@@ -79,9 +84,16 @@ class UserRepository:
             raise
 
     @staticmethod
+    def update_last_login(db: Session, user: User) -> User:
+        """
+        Updates the last_login timestamp for a user upon authentication.
+        """
+        return UserRepository.update(db, user, {"last_login": datetime.now(timezone.utc)})
+
+    @staticmethod
     def delete(db: Session, user_id: Union[uuid.UUID, str]) -> bool:
         """
-        Deletes a User from Neon PostgreSQL with explicit commit and rollback error handling.
+        Deletes a User from Neon PostgreSQL with explicit commit and rollback exception logging.
         """
         try:
             user = UserRepository.get_by_id(db, user_id)

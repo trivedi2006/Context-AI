@@ -286,3 +286,37 @@ def create_test_user_probe(db: Session = Depends(get_db)):
         },
         "queried_user_found": queried_user is not None
     }
+
+@router.post("/admin/test-db")
+def test_database_persistence_probe(db: Session = Depends(get_db)):
+    """
+    Test endpoint creating a test user directly in Neon PostgreSQL, querying back the inserted row, and returning row details.
+    """
+    import uuid
+    from app.repositories.user_repository import UserRepository
+
+    test_email = f"test_db_probe_{uuid.uuid4().hex[:6]}@example.com"
+    user_data = {
+        "name": "Neon Test User",
+        "email": test_email,
+        "password_hash": "$2b$10$probe_hash_verification_sample",
+        "provider": "local"
+    }
+    user = UserRepository.create(db, user_data)
+    
+    # Query back immediately
+    queried_user = UserRepository.get_by_email(db, test_email)
+    
+    return {
+        "status": "success",
+        "message": "User inserted into Neon PostgreSQL and verified",
+        "inserted_row": {
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email,
+            "provider": user.provider,
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        },
+        "queried_row_exists": queried_user is not None
+    }

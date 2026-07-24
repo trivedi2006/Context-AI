@@ -8,8 +8,7 @@ sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..'
 
 from app.config.settings import settings
 from app.database.base import Base
-from app.database.session import get_db_url
-from app.models.user import User  # register model metadata
+from app.models.user import User  # Register User model metadata
 
 config = context.config
 
@@ -19,7 +18,10 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_url():
-    return get_db_url()
+    raw_url = settings.DATABASE_URL.strip() if settings.DATABASE_URL else ""
+    if raw_url.startswith("postgres://"):
+        raw_url = raw_url.replace("postgres://", "postgresql://", 1)
+    return raw_url
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
