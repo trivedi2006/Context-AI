@@ -203,7 +203,7 @@ async def chat_with_document(
     response_formatter: ResponseFormatter = Depends(get_response_formatter)
 ):
     """
-    Intent detection + Adaptive retrieval + Grounded token streaming via SSE.
+    Intent detection + Metadata Entity Extraction + Confidence Thresholding + SSE streaming.
     """
     question = request.question.strip()
     if not question:
@@ -219,10 +219,16 @@ async def chat_with_document(
         retrieved_chunks, metadata_info = await retrieval_service.retrieve_context_with_intent(question)
         retrieval_time_ms = (time.perf_counter() - t0) * 1000
 
-        # 2. Process & Deduplicate Citations
+        # 2. Extract Entities & Check Structured Direct Match
+        from app.services.metadata_extractor import MetadataExtractor
+        doc_text = " ".join([c.chunk_text for c in retrieved_chunks]) if retrieved_chunks else ""
+        extracted_entities = MetadataExtractor.extract_document_entities(doc_text)
+        direct_match = MetadataExtractor.match_entity_query(question, extracted_entities)
+
+        # 3. Process & Deduplicate Citations
         citations = citation_service.process_citations(retrieved_chunks)
 
-        # 3. Build Intent-Adapted Production Prompt
+        # 4. Build Intent-Adapted Production Prompt
         system_prompt = prompt_service.get_system_prompt()
         user_prompt = prompt_service.build_prompt(question, retrieved_chunks, intent=metadata_info["intent"])
 
@@ -237,7 +243,39 @@ async def chat_with_document(
             }
             yield f"data: {json.dumps(meta_event)}\n\n"
 
-            # Event 2: Stream tokens from Groq LLM API
+            # Case A: Direct Structured Metadata Match (Fast Path - No LLM required)
+            if direct_match:
+                logger.info(f"Direct entity match found for question '{question}': {direct_match}")
+                yield f"data: {json.dumps({'type': 'token', 'content': direct_match})}\n\n"
+                done_event = {
+                    "type": "done",
+                    "content": direct_match,
+                    "timing_ms": {
+                        "retrieval_time": round(retrieval_time_ms, 2),
+                        "llm_response_time": 0.0,
+                        "total_response_time": round((time.perf_counter() - t0) * 1000, 2)
+                    }
+                }
+                yield f"data: {json.dumps(done_event)}\n\n"
+                return
+
+            # Case B: Low Confidence / No Chunks -> Return "Not found in the uploaded document."
+            if metadata_info["confidence"] == "Low" or not retrieved_chunks:
+                absent_msg = "Not found in the uploaded document."
+                yield f"data: {json.dumps({'type': 'token', 'content': absent_msg})}\n\n"
+                done_event = {
+                    "type": "done",
+                    "content": absent_msg,
+                    "timing_ms": {
+                        "retrieval_time": round(retrieval_time_ms, 2),
+                        "llm_response_time": 0.0,
+                        "total_response_time": round((time.perf_counter() - t0) * 1000, 2)
+                    }
+                }
+                yield f"data: {json.dumps(done_event)}\n\n"
+                return
+
+            # Case C: Stream response from Groq LLM API with Intent Rules
             t_llm_start = time.perf_counter()
             accumulated_text = ""
 
@@ -249,12 +287,15 @@ async def chat_with_document(
                 }
                 yield f"data: {json.dumps(token_event)}\n\n"
 
-            # Event 3: Sanitization & Response Completion
             llm_time_ms = (time.perf_counter() - t_llm_start) * 1000
             total_time_ms = (time.perf_counter() - t0) * 1000
 
-            # Final check to strip any AI disclaimers if generated
-            cleaned_text = response_formatter.sanitize_response(accumulated_text)
+            # Final intent-based formatting & sanitization
+            cleaned_text = response_formatter.format_final_answer(
+                accumulated_text,
+                citations,
+                intent=metadata_info["intent"]
+            )
 
             done_event = {
                 "type": "done",
