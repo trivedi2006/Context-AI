@@ -302,8 +302,8 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* Upload Workspace Render: Progress OR Upload Zone / Document Card */}
-          {progressState.step !== 'idle' && progressState.step !== 'ready' && progressState.step !== 'error' ? (
+          {/* Upload Workspace Render: Progress (including Error state) OR Upload Zone / Document Card */}
+          {progressState.step !== 'idle' && progressState.step !== 'ready' ? (
             <UploadProgress progressState={progressState} />
           ) : uploadedDoc ? (
             <DocumentCard
