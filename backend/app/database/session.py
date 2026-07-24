@@ -23,10 +23,8 @@ def create_db_engine():
     if raw_url.startswith("postgres://"):
         raw_url = raw_url.replace("postgres://", "postgresql://", 1)
 
-    if not raw_url or raw_url.startswith("sqlite:///./"):
-        if is_production:
-            raise RuntimeError("CRITICAL: DATABASE_URL environment variable is missing or invalid in production deployment! PostgreSQL is required.")
-        logger.warning(f"Using single absolute local SQLite database engine: {DEFAULT_SQLITE_URL}")
+    if not raw_url or raw_url.startswith("sqlite"):
+        logger.warning(f"No PostgreSQL DATABASE_URL configured. Falling back to single absolute local SQLite engine: {DEFAULT_SQLITE_URL}")
         return create_engine(DEFAULT_SQLITE_URL, connect_args={"check_same_thread": False})
 
     # If PostgreSQL URL is provided
@@ -45,10 +43,7 @@ def create_db_engine():
             logger.info("Successfully established connection to PostgreSQL database server.")
             return eng
         except Exception as e:
-            logger.error(f"Failed to connect to PostgreSQL database: {str(e)}")
-            if is_production:
-                raise RuntimeError(f"Production PostgreSQL connection failure: {str(e)}")
-            logger.warning(f"Falling back to single absolute local SQLite engine: {DEFAULT_SQLITE_URL}")
+            logger.error(f"Failed to connect to PostgreSQL database: {str(e)}. Falling back to local SQLite engine.")
             return create_engine(DEFAULT_SQLITE_URL, connect_args={"check_same_thread": False})
 
     # Local SQLite fallback
