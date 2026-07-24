@@ -1,28 +1,30 @@
-# Python 3.12 slim base image for minimal RAM footprint
+# Python 3.12 slim base image for ultra-lightweight container footprint
 FROM python:3.12-slim
 
 # Prevent Python from writing .pyc files & enable unbuffered logging output
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Memory & CPU Threading Optimizations for 512 MB Containers
+# Memory & Threading Optimizations for 512 MB Render Containers
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
 ENV OPENBLAS_NUM_THREADS=1
-ENV VECLIB_MAXIMUM_THREADS=1
-ENV NUMEXPR_NUM_THREADS=1
+ENV FASTEMBED_CACHE_PATH=/app/.fastembed_cache
 
 WORKDIR /app
 
-# Install system dependencies for PyMuPDF and C build tools
+# Install minimal system dependencies for PDF parsing & HTTP tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python requirements using CPU-only PyTorch index
+# Install Python requirements (FastEmbed ONNX runtime without heavy PyTorch)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download ONNX model during container build time so ZERO network requests happen at runtime
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
 
 # Copy application source code
 COPY . .

@@ -1,6 +1,7 @@
 import gc
 import threading
 from typing import List
+from fastembed import TextEmbedding
 from app.config.settings import settings
 from app.utils.logging import logger
 
@@ -16,60 +17,46 @@ class EmbeddingService:
                     cls._instance._model = None
         return cls._instance
 
-    def _get_model(self):
+    def _get_model(self) -> TextEmbedding:
         """
-        Lazily loads the SentenceTransformer model on first usage.
-        Does NOT load model during server startup or module import.
+        Lazily loads the FastEmbed ONNX model on first request.
+        Zero memory overhead at application startup, zero PyTorch dependency.
         """
         if self._model is None:
             with self._lock:
                 if self._model is None:
-                    logger.info(f"Lazily loading embedding model: {settings.EMBEDDING_MODEL_NAME}...")
-                    
-                    # Import PyTorch and cap CPU thread memory overhead
-                    import torch
-                    torch.set_num_threads(1)
-                    torch.set_num_interop_threads(1)
-                    
-                    from sentence_transformers import SentenceTransformer
-                    self._model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME, device="cpu")
-                    logger.info(f"Successfully loaded embedding model. Vector dimension: {settings.EMBEDDING_VECTOR_DIM}")
+                    model_name = settings.EMBEDDING_MODEL_NAME or "BAAI/bge-small-en-v1.5"
+                    logger.info(f"Lazily loading ONNX FastEmbed model: {model_name}...")
+                    self._model = TextEmbedding(model_name=model_name)
+                    logger.info(f"Successfully loaded ONNX FastEmbed model. Vector dimension: {settings.EMBEDDING_VECTOR_DIM}")
         return self._model
 
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
-        Generates dense vector embeddings for a list of text strings lazily on CPU.
+        Generates dense vector embeddings for a batch of text strings using ONNX Runtime.
+        Returns a list of float vector arrays (dim=384).
         """
         if not texts:
             return []
-        
+
         model = self._get_model()
-        embeddings = model.encode(
-            texts,
-            batch_size=16,
-            show_progress_bar=False,
-            normalize_embeddings=True
-        )
-        result = embeddings.tolist()
-        
-        # Trigger explicit garbage collection to release intermediate tensors
+        # FastEmbed model.embed returns a generator yielding numpy arrays
+        embeddings_generator = model.embed(texts, batch_size=16)
+        embeddings_list = [emb.tolist() for emb in embeddings_generator]
+
         gc.collect()
-        return result
+        return embeddings_list
 
     def generate_query_embedding(self, query_text: str) -> List[float]:
         """
-        Generates dense vector embedding for a query string lazily on CPU.
+        Generates dense vector embedding for a single query string using ONNX Runtime.
         """
-        if not query_text.strip():
+        if not query_text or not query_text.strip():
             return [0.0] * settings.EMBEDDING_VECTOR_DIM
-            
+
         model = self._get_model()
-        embedding = model.encode(
-            query_text,
-            show_progress_bar=False,
-            normalize_embeddings=True
-        )
-        result = embedding.tolist()
-        
+        embeddings_generator = model.embed([query_text])
+        result = list(embeddings_generator)[0].tolist()
+
         gc.collect()
         return result
