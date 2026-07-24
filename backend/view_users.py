@@ -4,14 +4,15 @@ import sys
 # Ensure backend modules can be loaded
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.database.session import SessionLocal
+from app.database.session import SessionLocal, engine
 from app.models.user import User
 
 def show_users():
     db = SessionLocal()
     try:
-        users = db.query(User).all()
+        users = db.query(User).order_by(User.created_at.desc()).all()
         print("\n================================ DATABASE USER RECORDS ================================")
+        print(f"Connected Database Engine: {engine.url}")
         print(f"Total Registered Users: {len(users)}\n")
         print(f"{'ID':<38} | {'Name':<20} | {'Email':<30} | {'Provider':<10} | {'Created At'}")
         print("-" * 125)
