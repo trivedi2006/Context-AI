@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp, Paperclip, Square, Sparkles } from 'lucide-react';
 import { UploadResponse } from '@/types';
+import { useVisualViewport } from '@/hooks/useVisualViewport';
 
 interface ChatInputProps {
   onSendMessage: (question: string) => void;
@@ -32,6 +33,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [input, setInput] = useState(initialValue);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const { isKeyboardOpen } = useVisualViewport();
 
   useEffect(() => {
     if (initialValue) {
@@ -70,16 +72,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  // Hide quick action pills when user is typing or soft keyboard is active
+  const showPills = uploadedDoc && !isStreaming && !input.trim() && !isKeyboardOpen;
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-3 sm:pb-5 select-none space-y-2.5">
+    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-2 sm:pb-4 select-none space-y-2">
       {/* Horizontally Scrollable Quick Action Pills */}
       <AnimatePresence>
-        {uploadedDoc && !isStreaming && (
+        {showPills && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.25 }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 touch-pan-x px-1"
           >
             {QUICK_PILLS.map((pill) => (
@@ -99,7 +104,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       {/* Floating ChatGPT / Claude Style Input Shell */}
       <form
         onSubmit={handleSubmit}
-        className="input-floating-shell p-2.5 sm:p-3 flex items-end gap-2.5 sm:gap-3 transition-all rounded-2xl sm:rounded-3xl border border-white/15 bg-[#18181c]/90 backdrop-blur-xl shadow-2xl"
+        className="input-floating-shell p-2 sm:p-3 flex items-end gap-2 sm:gap-3 transition-all rounded-2xl sm:rounded-3xl border border-white/15 bg-[#18181c]/95 backdrop-blur-xl shadow-2xl"
       >
         {/* Attachment Button */}
         <button
@@ -124,7 +129,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }
           rows={1}
           disabled={!uploadedDoc || isStreaming}
-          className="flex-1 bg-transparent text-white text-xs sm:text-sm placeholder:text-white/35 resize-none outline-none max-h-36 py-2.5 leading-relaxed font-sans"
+          className="flex-1 bg-transparent text-white text-xs sm:text-sm placeholder:text-white/35 resize-none outline-none max-h-36 py-2 leading-relaxed font-sans"
         />
 
         {/* Submit / Stop Action */}

@@ -28,6 +28,7 @@
 html, body {
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--bg-dark);
   color: var(--text-main);
@@ -53,6 +54,16 @@ html, body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* Viewport & Safe-Area Utilities */
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.pb-safe {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Typography Utilities */

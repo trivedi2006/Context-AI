@@ -8,8 +8,9 @@ import { SidebarLeft } from './SidebarLeft';
 import { EmptyChatState } from '../chat/EmptyChatState';
 import { ChatMessageItem } from '../chat/ChatMessageItem';
 import { ChatInput } from '../chat/ChatInput';
-import { Menu, Loader2, FileCheck, Sparkles } from 'lucide-react';
+import { Menu, Loader2, FileCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useVisualViewport } from '@/hooks/useVisualViewport';
 
 interface ChatLayoutProps {
   documents: DocumentData[];
@@ -51,16 +52,21 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   onStopStreaming,
 }) => {
   const { user } = useAuth();
+  const { isKeyboardOpen, viewportHeight } = useVisualViewport();
   const [showDesktopSidebar, setShowDesktopSidebar] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Auto-scroll to latest message on new messages, streaming tokens, or keyboard toggle
   useEffect(() => {
     if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      chatScrollRef.current.scrollTo({
+        top: chatScrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
     }
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, isKeyboardOpen, viewportHeight]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -78,7 +84,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const currentDocument = activeSession?.document || null;
 
   return (
-    <div className="w-full h-full flex overflow-hidden relative font-sans bg-[#0f0f11] text-[#f3f3f5]">
+    <div className="w-full h-dvh h-[100dvh] flex overflow-hidden relative font-sans bg-[#0f0f11] text-[#f3f3f5]">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
@@ -144,10 +150,10 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Column 2: Center Conversation Panel */}
+      {/* Column 2: Center Conversation Panel (Strict 3-Tier Flexbox) */}
       <div className="flex-1 h-full flex flex-col justify-between overflow-hidden relative bg-[#111114]">
-        {/* Mobile & Desktop Compact Header */}
-        <div className="h-14 md:h-16 px-3 sm:px-6 flex items-center justify-between border-b border-white/[0.08] bg-[#141417]/90 backdrop-blur-md shrink-0 select-none">
+        {/* Tier 1: Fixed Header (h-14 md:h-16 shrink-0) */}
+        <div className="h-14 md:h-16 px-3 sm:px-6 flex items-center justify-between border-b border-white/[0.08] bg-[#141417]/90 backdrop-blur-md shrink-0 select-none z-20">
           <div className="flex items-center gap-2.5 min-w-0">
             {/* Mobile Drawer Trigger (☰) */}
             <button
@@ -209,9 +215,13 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           </div>
         </div>
 
-        {/* Conversation Stream / Upload Notification State */}
+        {/* Tier 2: Flexible Message Scroll Area (flex-1 overflow-y-auto overscroll-contain) */}
         {messages.length > 0 ? (
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
+          <div
+            ref={chatScrollRef}
+            className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6 pb-6"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {messages.map((msg) => (
               <ChatMessageItem
                 key={msg.id}
@@ -234,7 +244,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overscroll-contain">
             <EmptyChatState
               uploadedDoc={uploadedDoc}
               sessions={sessions}
@@ -244,8 +254,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           </div>
         )}
 
-        {/* Sticky Mobile & Desktop Input Area */}
-        <div className="shrink-0 pt-1 pb-safe">
+        {/* Tier 3: Sticky Bottom Input Bar (sticky bottom-0 shrink-0 z-30 pb-safe) */}
+        <div className="sticky bottom-0 shrink-0 z-30 bg-[#111114] pb-safe pt-1">
           <ChatInput
             onSendMessage={onSendMessage}
             isStreaming={isStreaming}
