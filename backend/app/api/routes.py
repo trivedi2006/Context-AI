@@ -12,6 +12,18 @@ from app.schemas.health import SystemHealthResponse
 from app.schemas.rag import UploadResponse, ChatRequest, Citation
 from app.config.settings import settings
 from app.utils.logging import logger
+
+from app.services.pdf_service import PDFService
+from app.services.chunk_service import ChunkService
+from app.services.embedding_service import EmbeddingService
+from app.services.vector_service import VectorService
+from app.services.retrieval_service import RetrievalService
+from app.services.prompt_service import PromptService
+from app.services.llm_service import LLMService
+from app.services.citation_service import CitationService
+from app.services.response_formatter import ResponseFormatter
+from app.services.background_ingestion_service import process_document_background
+
 from app.api.deps import (
     get_pdf_service, get_chunk_service, get_embedding_service,
     get_vector_service, get_retrieval_service, get_prompt_service,
