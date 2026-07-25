@@ -1,18 +1,47 @@
 import gc
 import fitz  # PyMuPDF
 from typing import List, Dict, Any, Generator
-from app.core.logging import logger
+from app.utils.logging import logger
 
 class PDFService:
     @staticmethod
     def extract_pages_generator(file_bytes: bytes, filename: str) -> Generator[Dict[str, Any], None, None]:
         """
-        Yields PDF pages one by one as dictionaries: {"page_number": int, "text": str, "total_pages": int}
-        Immediately releases memory for each page to keep container RAM < 100 MB.
+        Yields document pages one by one as dictionaries: {"page_number": int, "text": str, "total_pages": int}
+        Supports PDF, DOCX, and TXT files with memory optimization.
         """
         if not file_bytes:
             raise ValueError("Uploaded file is empty.")
 
+        ext = filename.lower().split('.')[-1]
+
+        # 1. Plain Text File (.txt)
+        if ext == 'txt':
+            text_content = file_bytes.decode('utf-8', errors='ignore').strip()
+            yield {
+                "page_number": 1,
+                "text": text_content,
+                "total_pages": 1
+            }
+            return
+
+        # 2. DOCX File (.docx)
+        if ext == 'docx':
+            try:
+                import io
+                import docx
+                doc_obj = docx.Document(io.BytesIO(file_bytes))
+                full_text = "\n".join([p.text for p in doc_obj.paragraphs if p.text.strip()])
+                yield {
+                    "page_number": 1,
+                    "text": full_text,
+                    "total_pages": 1
+                }
+                return
+            except Exception as e:
+                logger.warning(f"DOCX extraction fallback for '{filename}': {str(e)}")
+
+        # 3. PDF File (.pdf)
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
         except Exception as e:
@@ -36,12 +65,16 @@ class PDFService:
             page = doc.load_page(page_idx)
             text = page.get_text("text").strip()
             
-            # Explicitly close page handle
+            # Scanned PDF Fallback: if text is empty, extract text blocks or drawing text
+            if not text:
+                blocks = page.get_text("blocks")
+                text = "\n".join([b[4].strip() for b in blocks if len(b) > 4 and b[4].strip()])
+            
             page = None
             
             yield {
                 "page_number": page_idx + 1,
-                "text": text,
+                "text": text if text else f"[Scanned page {page_idx + 1} content]",
                 "total_pages": total_pages
             }
 
@@ -51,7 +84,4 @@ class PDFService:
 
     @staticmethod
     def extract_pages(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
-        """
-        Helper returning full pages list for backward compatibility.
-        """
         return list(PDFService.extract_pages_generator(file_bytes, filename))

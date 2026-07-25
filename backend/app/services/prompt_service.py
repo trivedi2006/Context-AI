@@ -55,10 +55,11 @@ class PromptService:
         chunks: List[SearchResult],
         intent: str = QueryIntent.GENERAL_QA,
         doc_filename: Optional[str] = None,
-        doc_page_count: Optional[int] = None
+        doc_page_count: Optional[int] = None,
+        conversation_history: Optional[List[str]] = None
     ) -> str:
         """
-        Builds a grounded prompt tailored to user intent classification with Document Metadata.
+        Builds a grounded prompt tailored to user intent classification with Document Metadata and Conversation History.
         """
         metadata_header = ""
         if doc_filename or doc_page_count:
@@ -66,6 +67,13 @@ class PromptService:
 - Document Name: {doc_filename or 'Uploaded PDF'}
 - Total Pages: {doc_page_count or 'Unknown'}
 - Total Sections Analyzed: {len(chunks)}
+"""
+
+        history_block = ""
+        if conversation_history:
+            history_text = "\n".join(conversation_history)
+            history_block = f"""RECENT CONVERSATION HISTORY:
+{history_text}
 """
 
         if not chunks:
@@ -78,6 +86,7 @@ class PromptService:
             formatted_context = "\n\n".join(context_blocks)
 
         user_content = f"""{metadata_header}
+{history_block}
 DOCUMENT CONTENT SECTIONS:
 {formatted_context}
 

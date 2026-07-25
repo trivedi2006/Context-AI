@@ -82,16 +82,10 @@ async def upload_document(
     logger.info(f"\n==================== [STAGE 1: UPLOAD INIT] ====================")
     logger.info(f"File Received: '{file.filename}', User: '{current_user.email}' (id={current_user.id})")
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file format. Only PDF files (.pdf) are allowed."
-        )
-
     file_bytes = await file.read()
     file_size_bytes = len(file_bytes)
     file_size_mb = file_size_bytes / (1024 * 1024)
-    logger.info(f"PDF File Size: {file_size_bytes} bytes ({file_size_mb:.2f} MB)")
+    logger.info(f"File Size: {file_size_bytes} bytes ({file_size_mb:.2f} MB)")
 
     if file_size_mb > settings.MAX_FILE_SIZE_MB:
         raise HTTPException(
@@ -181,10 +175,10 @@ async def upload_document(
             }
         }
     except Exception as e:
-        logger.exception(f"[UPLOAD ERROR] Failed to upload PDF '{file.filename}': {str(e)}")
+        logger.exception(f"[UPLOAD ERROR] Failed to upload file '{file.filename}': {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while uploading the PDF file: {str(e)}"
+            detail=f"An error occurred while uploading the file: {str(e)}"
         )
 
 @router.get("/documents")
@@ -345,6 +339,7 @@ async def chat_with_session(
     target_session = None
     document_id = None
     doc = None
+    conversation_history: List[str] = []
 
     if session_id:
         target_session = chat_repo.get_by_id(session_id)
@@ -358,6 +353,12 @@ async def chat_with_session(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Document is still processing in the background. Please wait a moment."
                 )
+
+            # Retrieve past conversation history context (last 6 turns)
+            past_messages = msg_repo.get_session_messages(session_id)
+            recent_turns = past_messages[-6:]
+            for m in recent_turns:
+                conversation_history.append(f"{m.role.upper()}: {m.content[:300]}")
 
     if target_session:
         msg_repo.add_message(
@@ -378,9 +379,11 @@ async def chat_with_session(
     try:
         t0 = time.perf_counter()
 
+        # Execute Hybrid Retrieval Pipeline (Qdrant Dense + PostgreSQL BM25 + RRF Reranking)
         retrieved_chunks, metadata_info = await retrieval_service.retrieve_context_with_intent(
             question,
-            document_id=document_id
+            document_id=document_id,
+            db=db
         )
 
         if not retrieved_chunks and document_id:
@@ -405,7 +408,8 @@ async def chat_with_session(
             retrieved_chunks,
             intent=metadata_info["intent"],
             doc_filename=doc_name,
-            doc_page_count=doc_pages
+            doc_page_count=doc_pages,
+            conversation_history=conversation_history
         )
 
         async def stream_generator():
@@ -426,7 +430,7 @@ async def chat_with_session(
                 yield f"data: {json.dumps({'type': 'token', 'content': direct_match})}\n\n"
                 total_time_ms = (time.perf_counter() - t0) * 1000
             elif not retrieved_chunks and not doc:
-                final_answer = "Not found in the uploaded document."
+                final_answer = "The uploaded document does not mention this."
                 yield f"data: {json.dumps({'type': 'token', 'content': final_answer})}\n\n"
                 total_time_ms = (time.perf_counter() - t0) * 1000
             else:

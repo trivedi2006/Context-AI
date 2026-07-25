@@ -2,19 +2,20 @@ import uuid
 import gc
 from typing import List, Dict, Any, Generator
 from app.models.schemas import ChunkMetadata
-from app.core.logging import logger
+from app.utils.logging import logger
 
 class ChunkService:
-    def __init__(self, chunk_size: int = 700, chunk_overlap: int = 140):
-        # 600-800 tokens ~ 2400-3200 chars; setting chunk_size in characters (~2800 chars)
+    def __init__(self, chunk_size: int = 750, chunk_overlap: int = 110):
+        # 600-900 tokens ~ 2500-3600 characters (~3000 chars)
         self.chunk_size_chars = chunk_size * 4
         self.chunk_overlap_chars = chunk_overlap * 4
-        self.separators = ["\n\n", "\n# ", "\n## ", "\n### ", "\n- ", "\n", ". ", " "]
+        self.separators = ["\n\n", "\n# ", "\n## ", "\n### ", "\n- ", "\n| ", "\n", ". ", " "]
 
     def _split_text(self, text: str) -> List[str]:
         """
-        Context-aware splitting preserving paragraphs, headings, tables, and bullet lists.
-        Never splits paragraphs in the middle unless paragraph length exceeds max limit.
+        Semantic Boundary Splitting:
+        Target: 600-900 tokens (2500-3600 chars) with 15% sliding overlap.
+        Preserves section headings, markdown tables, bullet lists, and paragraphs.
         """
         if not text:
             return []
@@ -70,10 +71,6 @@ class ChunkService:
         return chunks
 
     def create_chunks_generator(self, pages_generator: Generator[Dict[str, Any], None, None], filename: str) -> Generator[ChunkMetadata, None, None]:
-        """
-        Yields ChunkMetadata items incrementally from the pages generator.
-        Prevents storing all chunks in memory simultaneously.
-        """
         global_chunk_count = 0
         for page in pages_generator:
             page_num = page["page_number"]
@@ -95,9 +92,6 @@ class ChunkService:
             del raw_chunks
 
     def create_chunks(self, pages_data: List[Dict[str, Any]], filename: str) -> List[ChunkMetadata]:
-        """
-        Helper returning full chunks list for backward compatibility.
-        """
         def _list_gen():
             for p in pages_data:
                 yield p
