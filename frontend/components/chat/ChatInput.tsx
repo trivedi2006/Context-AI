@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUp, Paperclip, Square } from 'lucide-react';
+import { ArrowUp, Paperclip, Square, Sparkles } from 'lucide-react';
 import { UploadResponse } from '@/types';
 
 interface ChatInputProps {
@@ -14,12 +14,12 @@ interface ChatInputProps {
   onUploadClick?: () => void;
 }
 
-const SUGGESTED_QUESTIONS = [
-  'Explain first page',
-  'Summarize document',
-  'Extract action items',
-  'List key dates & numbers',
-  'What are the conclusions?',
+const QUICK_PILLS = [
+  { label: 'Explain', query: 'Explain the main concepts in this document simply.' },
+  { label: 'Summarize', query: 'Summarize the document into key bullet points.' },
+  { label: 'Key Takeaways', query: 'What are the top 5 key takeaways?' },
+  { label: 'Translate', query: 'Translate the main summary into English.' },
+  { label: 'Page Count', query: 'How many pages are in this document?' },
 ];
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -64,47 +64,54 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const handlePillClick = (query: string) => {
+    if (uploadedDoc && !isStreaming) {
+      onSendMessage(query);
+    }
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-5 select-none space-y-3">
-      {/* Prompt Suggestion Chips */}
+    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 pb-3 sm:pb-5 select-none space-y-2.5">
+      {/* Horizontally Scrollable Quick Action Pills */}
       <AnimatePresence>
         {uploadedDoc && !isStreaming && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.3 }}
-            className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 touch-pan-x"
+            transition={{ duration: 0.25 }}
+            className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 touch-pan-x px-1"
           >
-            {SUGGESTED_QUESTIONS.map((q) => (
+            {QUICK_PILLS.map((pill) => (
               <button
-                key={q}
-                onClick={() => setInput(q)}
-                className="px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 hover:text-white transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                key={pill.label}
+                onClick={() => handlePillClick(pill.query)}
+                className="px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 hover:text-white transition-all cursor-pointer shrink-0 whitespace-nowrap min-h-[36px] flex items-center gap-1.5 active:scale-95"
               >
-                {q}
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>{pill.label}</span>
               </button>
             ))}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Floating Input Shell */}
+      {/* Floating ChatGPT / Claude Style Input Shell */}
       <form
         onSubmit={handleSubmit}
-        className="input-floating-shell p-3 flex items-end gap-3 transition-all opacity-100"
+        className="input-floating-shell p-2.5 sm:p-3 flex items-end gap-2.5 sm:gap-3 transition-all rounded-2xl sm:rounded-3xl border border-white/15 bg-[#18181c]/90 backdrop-blur-xl shadow-2xl"
       >
-        {/* Attachment Icon */}
+        {/* Attachment Button */}
         <button
           type="button"
           onClick={onUploadClick}
-          className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white/70 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-all hover:scale-105"
+          className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white/70 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-all hover:scale-105 min-h-[44px] min-w-[44px]"
           title="Upload new PDF document"
         >
           <Paperclip className="w-4 h-4" />
         </button>
 
-        {/* Text Input */}
+        {/* Text Area */}
         <textarea
           ref={textareaRef}
           value={input}
@@ -113,24 +120,24 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           placeholder={
             uploadedDoc
               ? 'Ask anything about your document...'
-              : 'Click 📎 attachment to upload a PDF or ask...'
+              : 'Click 📎 attachment to upload a PDF...'
           }
           rows={1}
           disabled={!uploadedDoc || isStreaming}
-          className="flex-1 bg-transparent text-white text-sm placeholder:text-white/35 resize-none outline-none max-h-40 py-2 leading-relaxed font-sans"
+          className="flex-1 bg-transparent text-white text-xs sm:text-sm placeholder:text-white/35 resize-none outline-none max-h-36 py-2.5 leading-relaxed font-sans"
         />
 
         {/* Submit / Stop Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="hidden sm:inline-block text-[11px] font-mono text-white/30 pr-1">
-            Press Enter ↵
+            Enter ↵
           </span>
 
           {isStreaming ? (
             <button
               type="button"
               onClick={onStopStreaming}
-              className="p-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all shadow-sm cursor-pointer"
+              className="p-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all shadow-sm cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
               title="Stop Generating"
             >
               <Square className="w-4 h-4 fill-current" />
@@ -139,9 +146,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="submit"
               disabled={!input.trim() || !uploadedDoc}
-              className={`p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
+              className={`p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer min-h-[44px] min-w-[44px] ${
                 input.trim() && uploadedDoc
-                  ? 'bg-white text-black hover:bg-white/90 shadow-md'
+                  ? 'bg-white text-black hover:bg-white/90 shadow-md active:scale-95'
                   : 'bg-white/10 text-white/30 border border-white/5 cursor-not-allowed'
               }`}
             >
