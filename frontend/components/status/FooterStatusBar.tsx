@@ -9,9 +9,9 @@ interface FooterStatusBarProps {
 }
 
 export const FooterStatusBar: React.FC<FooterStatusBarProps> = ({ health }) => {
-  const isBackendOk = health?.backend === 'ok';
-  const isGroqOk = health?.groq.status === 'ok';
-  const isQdrantOk = health?.qdrant.status === 'ok';
+  const isBackendOk = health?.backend === 'connected';
+  const isGroqOk = health?.groq.status === 'connected';
+  const isQdrantOk = health?.qdrant.status === 'connected';
 
   return (
     <footer className="h-9 w-full px-6 bg-[#111111] border-t border-white/[0.08] flex items-center justify-between text-xs text-white/50 font-mono select-none relative z-40">

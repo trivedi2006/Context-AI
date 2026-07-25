@@ -86,25 +86,33 @@ def login(
     db: Session = Depends(get_db)
 ):
     """
-    Authenticates user credentials and sets HTTP-only JWT cookie.
-    Offloaded to FastAPI threadpool worker.
+    Authenticates user credentials and sets HTTP-only JWT cookie with millisecond telemetry timeline.
     """
     t_start = time.perf_counter()
     logger.info(f"[Login Request Started] Email: {login_data.email}")
 
-    user = AuthService.authenticate_user(db, login_data.email, login_data.password)
+    user, timings = AuthService.authenticate_user_with_telemetry(db, login_data.email, login_data.password)
     if not user:
-        logger.warning(f"[Login Failed] Invalid credentials for email: {login_data.email}")
+        t_fail_ms = (time.perf_counter() - t_start) * 1000
+        logger.warning(f"[Login Failed] Invalid credentials for email: {login_data.email} in {t_fail_ms:.1f}ms")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email address or password. Please try again."
         )
 
+    t_jwt_start = time.perf_counter()
     token = create_access_token(user.id, user.email)
     set_auth_cookie(response, token, remember_me=login_data.remember_me or False)
+    jwt_gen_ms = (time.perf_counter() - t_jwt_start) * 1000
 
     t_total_ms = (time.perf_counter() - t_start) * 1000
-    logger.info(f"[Login Request Complete] User: {user.email} in {t_total_ms:.1f}ms")
+    logger.info(
+        f"[Login Timeline] User: {user.email} (id={user.id}). "
+        f"db_lookup={timings.get('db_lookup_ms', 0):.1f}ms, "
+        f"pwd_verify={timings.get('pwd_verify_ms', 0):.1f}ms, "
+        f"jwt_gen={jwt_gen_ms:.1f}ms, "
+        f"total_response_time={t_total_ms:.1f}ms"
+    )
 
     return AuthMessageResponse(
         status="success",
@@ -114,9 +122,6 @@ def login(
     )
 
 def get_callback_uri(request: Request) -> str:
-    """
-    Constructs accurate OAuth callback URI, enforcing HTTPS scheme on production reverse proxies (Render).
-    """
     base = str(request.base_url).rstrip('/')
     if "localhost" not in base and "127.0.0.1" not in base and base.startswith("http://"):
         base = base.replace("http://", "https://", 1)
@@ -124,9 +129,6 @@ def get_callback_uri(request: Request) -> str:
 
 @router.get("/google/login")
 async def google_login(request: Request):
-    """
-    Redirects user directly to Google OAuth consent screen.
-    """
     redirect_uri = get_callback_uri(request)
     auth_url = get_google_auth_url(redirect_uri)
     return RedirectResponse(url=auth_url)
@@ -137,9 +139,6 @@ async def google_callback(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    Handles Google OAuth redirect code, authenticates user, and redirects to frontend.
-    """
     try:
         redirect_uri = get_callback_uri(request)
         logger.info(f"[Google OAuth Callback Started] Redirect URI: {redirect_uri}")
@@ -157,7 +156,6 @@ async def google_callback(
         user_id_str = str(user.id)
         token = create_access_token(user_id_str, user.email)
 
-        # Determine target frontend URL matching current origin host
         target_frontend = "https://context-ai-v1.vercel.app"
         if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
             target_frontend = settings.FRONTEND_URL.rstrip('/')
@@ -182,141 +180,9 @@ async def google_callback(
 
 @router.post("/logout")
 async def logout(response: Response):
-    """
-    Clears the access_token HTTP-only cookie.
-    """
     response.delete_cookie(key=COOKIE_NAME, path="/")
     return {"status": "success", "message": "Logged out successfully."}
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user = Depends(get_current_user)):
-    """
-    Returns the currently authenticated user profile.
-    """
     return UserResponse.model_validate(user)
-
-@router.get("/admin/users")
-def get_all_registered_users(db: Session = Depends(get_db)):
-    """
-    Returns a list of all registered user accounts stored in the active database.
-    """
-    from app.models.user import User
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    return [
-        {
-            "id": str(u.id),
-            "name": u.name,
-            "email": u.email,
-            "provider": u.provider,
-            "profile_picture": u.profile_picture,
-            "created_at": u.created_at.isoformat() if u.created_at else None
-        }
-        for u in users
-    ]
-
-@router.get("/admin/database")
-def get_database_info(db: Session = Depends(get_db)):
-    """
-    Diagnostic probe returning active database connection parameters, engine dialect, server version, and pool metrics.
-    """
-    from datetime import datetime
-    from sqlalchemy import text
-    from app.database.session import engine
-
-    raw_url = str(engine.url)
-    masked_url = raw_url
-    if "@" in raw_url:
-        prefix, rest = raw_url.split("@", 1)
-        if ":" in prefix:
-            scheme_user, _ = prefix.rsplit(":", 1)
-            masked_url = f"{scheme_user}:****@{rest}"
-
-    server_version = "Unknown"
-    try:
-        res = db.execute(text("SELECT version();")).fetchone()
-        if res:
-            server_version = res[0]
-    except Exception as e:
-        server_version = str(e)
-
-    pool_size = 5
-    if hasattr(engine.pool, "size"):
-        try:
-            pool_size = engine.pool.size()
-        except Exception:
-            pool_size = 5
-
-    return {
-        "database": masked_url,
-        "dialect": engine.dialect.name,
-        "server_version": server_version,
-        "pool_size": pool_size,
-        "checked_at": datetime.utcnow().isoformat() + "Z"
-    }
-
-@router.post("/admin/test-user")
-def create_test_user_probe(db: Session = Depends(get_db)):
-    """
-    Temporary diagnostic endpoint creating a test user record directly in Neon PostgreSQL and confirming immediate persistence.
-    """
-    import uuid
-    from app.repositories.user_repository import UserRepository
-
-    test_email = f"test_neon_{uuid.uuid4().hex[:6]}@example.com"
-    user_data = {
-        "name": "Test User",
-        "email": test_email,
-        "password_hash": "$2b$10$test_hash_sample_verification_key",
-        "provider": "local"
-    }
-    user = UserRepository.create(db, user_data)
-    
-    # Query back immediately
-    queried_user = UserRepository.get_by_email(db, test_email)
-    
-    return {
-        "status": "success",
-        "message": "Test user created and verified in Neon PostgreSQL",
-        "created_user": {
-            "id": str(user.id),
-            "name": user.name,
-            "email": user.email,
-            "provider": user.provider,
-            "created_at": user.created_at.isoformat() if user.created_at else None
-        },
-        "queried_user_found": queried_user is not None
-    }
-
-@router.post("/admin/test-db")
-def test_database_persistence_probe(db: Session = Depends(get_db)):
-    """
-    Test endpoint creating a test user directly in Neon PostgreSQL, querying back the inserted row, and returning row details.
-    """
-    import uuid
-    from app.repositories.user_repository import UserRepository
-
-    test_email = f"test_db_probe_{uuid.uuid4().hex[:6]}@example.com"
-    user_data = {
-        "name": "Neon Test User",
-        "email": test_email,
-        "password_hash": "$2b$10$probe_hash_verification_sample",
-        "provider": "local"
-    }
-    user = UserRepository.create(db, user_data)
-    
-    # Query back immediately
-    queried_user = UserRepository.get_by_email(db, test_email)
-    
-    return {
-        "status": "success",
-        "message": "User inserted into Neon PostgreSQL and verified",
-        "inserted_row": {
-            "id": str(user.id),
-            "name": user.name,
-            "email": user.email,
-            "provider": user.provider,
-            "is_active": user.is_active,
-            "created_at": user.created_at.isoformat() if user.created_at else None
-        },
-        "queried_row_exists": queried_user is not None
-    }

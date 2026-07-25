@@ -33,8 +33,12 @@ def create_db_engine():
         logger.info("Initializing production Neon PostgreSQL database engine...")
         eng = create_engine(
             raw_url,
-            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=10,
             pool_recycle=300,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": 5},
             future=True,
             echo=False,
         )

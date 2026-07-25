@@ -19,7 +19,7 @@ const STEPS: { key: UploadStep; label: string }[] = [
 
 export const UploadProgress: React.FC<UploadProgressProps> = ({ progressState }) => {
   const getStepStatus = (stepKey: UploadStep) => {
-    const order: UploadStep[] = ['idle', 'extracting', 'chunking', 'embedding', 'indexing', 'ready'];
+    const order: UploadStep[] = ['idle', 'uploading', 'extracting', 'chunking', 'embedding', 'indexing', 'ready'];
     const currentIndex = order.indexOf(progressState.step);
     const stepIndex = order.indexOf(stepKey);
 
@@ -29,18 +29,20 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({ progressState })
     return 'upcoming';
   };
 
+  const percent = progressState.progressPercent || 0;
+
   return (
     <motion.div
       initial={{ scale: 0.98, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full bg-[#171717] border border-white/[0.06] rounded-2xl p-6 space-y-6 shadow-sm"
+      className="w-full bg-[#171717] border border-white/[0.06] rounded-2xl p-6 space-y-6 shadow-sm font-sans"
     >
       <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-        <span className="text-xs font-semibold text-white tracking-tight heading-display">
+        <span className="text-xs font-semibold text-white tracking-tight font-['Space_Grotesk']">
           Processing Document
         </span>
-        <span className="text-xs font-mono text-white/40">{progressState.percentage}%</span>
+        <span className="text-xs font-mono text-white/40">{percent}%</span>
       </div>
 
       {/* Progress Bar */}
@@ -48,7 +50,7 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({ progressState })
         <motion.div
           className="h-full bg-white rounded-full"
           initial={{ width: '0%' }}
-          animate={{ width: `${progressState.percentage}%` }}
+          animate={{ width: `${percent}%` }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         />
       </div>

@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from app.api.routes import router as api_router
 from app.auth.routes import router as auth_router
@@ -13,6 +14,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# GZip Response Compression Middleware (Compresses responses >= 500 bytes)
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # CORS Configuration allowing credentials & origin patterns
 origins = [
     settings.FRONTEND_URL,
@@ -21,6 +25,10 @@ origins = [
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "http://localhost:3009",
+    "http://127.0.0.1:3009",
+    "http://localhost:3010",
+    "http://127.0.0.1:3010",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]

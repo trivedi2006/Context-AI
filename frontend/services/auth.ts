@@ -5,7 +5,7 @@ import { API_BASE_URL, getApiBaseUrl } from './system';
 export const authClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 15000,
+  timeout: 30000, // 30 seconds to prevent premature client timeouts
   headers: {
     'Content-Type': 'application/json',
   },

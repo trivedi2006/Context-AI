@@ -3,8 +3,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { UploadResponse } from '@/types';
-import { FileText, RefreshCw, Trash2, CheckCircle2 } from 'lucide-react';
-import { Badge } from '../common/Badge';
+import { RefreshCw, Trash2 } from 'lucide-react';
 
 interface DocumentCardProps {
   uploadedDoc: UploadResponse;
@@ -33,38 +32,40 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       layout
       initial={{ scale: 0.98, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full bg-[#171717] border border-white/[0.06] rounded-2xl p-6 space-y-5 shadow-sm select-none"
+      transition={{ duration: 0.3 }}
+      className="doc-card-panel space-y-4 select-none"
     >
-      {/* Active Document Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-white">
-            <FileText className="w-5 h-5 text-white/80" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-white truncate max-w-[180px] heading-display" title={uploadedDoc.document_name}>
-              {uploadedDoc.document_name}
-            </h3>
-            <p className="text-xs text-white/40">{uploadedDoc.total_pages} Pages Context</p>
-          </div>
+      {/* Top Header */}
+      <div className="flex gap-3 items-start">
+        <div className="w-[38px] h-[38px] rounded-xl flex-shrink-0 bg-gradient-to-br from-purple-500/25 to-pink-500/25 flex items-center justify-center text-lg">
+          📄
         </div>
-        <Badge variant="success" size="sm" icon={<CheckCircle2 className="w-3 h-3 text-[#D9FFD6]" />}>
-          Indexed
-        </Badge>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-white margin-0 truncate" title={uploadedDoc.document_name}>
+            {uploadedDoc.document_name}
+          </p>
+          <p className="text-[11px] text-[var(--text-faint)] mt-0.5">
+            {uploadedDoc.total_pages} pages context
+          </p>
+        </div>
       </div>
 
-      {/* Simplified Clean Document Info */}
-      <div className="p-3 bg-[#1d1d1d] rounded-xl flex items-center justify-between text-xs font-mono">
-        <span className="text-white/50">Status</span>
-        <span className="text-[#D9FFD6] font-medium">● Indexed & Ready</span>
+      {/* Indexed Tag */}
+      <div>
+        <span className="indexed-tag">✓ Indexed</span>
+      </div>
+
+      {/* Status Row */}
+      <div className="flex justify-between items-center text-xs text-[var(--text-dim)] border-t border-[var(--border)] pt-3.5 mt-1">
+        <span>Status</span>
+        <span className="text-[#7ee8c7] font-medium">● Indexed &amp; ready</span>
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex gap-2.5 pt-1">
         <button
           onClick={onReplaceClick}
-          className="flex-1 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white flex items-center justify-center gap-1.5 transition-all"
+          className="flex-1 text-xs font-medium py-2 rounded-xl border border-[var(--border-strong)] bg-[var(--panel-2)] text-[var(--text)] hover:border-white/25 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Replace</span>
@@ -73,8 +74,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-xs font-medium text-rose-300 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-          title="Remove Document"
+          className="flex-1 text-xs font-medium py-2 rounded-xl border border-pink-500/25 bg-pink-500/10 text-[#ff9bb8] hover:border-pink-500/40 hover:shadow-[0_0_18px_rgba(236,72,153,0.18)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span>Clear</span>

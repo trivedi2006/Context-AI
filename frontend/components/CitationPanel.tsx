@@ -59,7 +59,7 @@ export const CitationPanel: React.FC<CitationPanelProps> = ({ citation, onClose 
                 <Quote className="w-3.5 h-3.5 text-blue-400" /> Retrieved Context Chunk Excerpt:
               </div>
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed font-mono whitespace-pre-wrap max-h-60 overflow-y-auto">
-                {citation.excerpt}
+                {citation.snippet || (citation as any).excerpt}
               </div>
             </div>
           </div>

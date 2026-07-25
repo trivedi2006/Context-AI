@@ -1,6 +1,9 @@
-import os
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
     # Relational Database
@@ -32,7 +35,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[str(ENV_FILE), ".env"],
         env_file_encoding="utf-8",
         extra="ignore"
     )

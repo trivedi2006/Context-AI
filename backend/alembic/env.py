@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..'
 
 from app.config.settings import settings
 from app.database.base import Base
-from app.models.user import User  # Register User model metadata
+from app.models import User, Document, ChatSession, ChatMessageModel  # Register all models metadata
 
 config = context.config
 

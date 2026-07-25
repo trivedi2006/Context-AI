@@ -5,10 +5,18 @@ import { API_BASE_URL, getApiBaseUrl } from './system';
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 120000, // 2 minutes for processing large PDFs
+  withCredentials: true,
 });
 
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getApiBaseUrl();
+  config.withCredentials = true;
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
   return config;
 });
 

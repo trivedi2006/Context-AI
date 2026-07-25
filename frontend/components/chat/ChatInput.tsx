@@ -11,15 +11,15 @@ interface ChatInputProps {
   onStopStreaming?: () => void;
   uploadedDoc: UploadResponse | null;
   initialValue?: string;
+  onUploadClick?: () => void;
 }
 
 const SUGGESTED_QUESTIONS = [
-  'Summarize this document',
-  'Explain key concepts',
+  'Explain first page',
+  'Summarize document',
   'Extract action items',
-  'Generate interview questions',
-  'List important dates',
-  'Compare sections',
+  'List key dates & numbers',
+  'What are the conclusions?',
 ];
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -28,6 +28,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onStopStreaming,
   uploadedDoc,
   initialValue = '',
+  onUploadClick,
 }) => {
   const [input, setInput] = useState(initialValue);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -64,53 +65,46 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-4 select-none space-y-3">
-      {/* Suggested Question Chips (Appears ONLY AFTER Indexing) */}
+    <div className="w-full max-w-4xl mx-auto px-4 pb-5 select-none space-y-3">
+      {/* Prompt Suggestion Chips */}
       <AnimatePresence>
         {uploadedDoc && !isStreaming && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="flex items-center gap-2 px-1 overflow-x-auto no-scrollbar py-1 touch-pan-x"
+            transition={{ duration: 0.3 }}
+            className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 touch-pan-x"
           >
-            {SUGGESTED_QUESTIONS.map((q, idx) => (
-              <motion.button
+            {SUGGESTED_QUESTIONS.map((q) => (
+              <button
                 key={q}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                whileHover={{ y: -2, backgroundColor: '#232323' }}
-                whileTap={{ scale: 0.98 }}
                 onClick={() => setInput(q)}
-                className="px-3 py-1.5 rounded-xl bg-[#171717] border border-white/[0.06] text-xs font-medium text-white/75 hover:text-white transition-colors cursor-pointer shadow-sm shrink-0 whitespace-nowrap"
+                className="px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 hover:text-white transition-all cursor-pointer shrink-0 whitespace-nowrap"
               >
                 {q}
-              </motion.button>
+              </button>
             ))}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Input Box */}
+      {/* Floating Input Shell */}
       <form
         onSubmit={handleSubmit}
-        className={`relative flex items-end gap-3 p-3 bg-[#171717] border rounded-2xl transition-all ${
-          uploadedDoc
-            ? 'border-white/[0.08] focus-within:border-white/25 shadow-sm'
-            : 'border-white/[0.04] opacity-50 pointer-events-none'
-        }`}
+        className="input-floating-shell p-3 flex items-end gap-3 transition-all opacity-100"
       >
         {/* Attachment Icon */}
-        <div
-          className="p-2.5 rounded-xl bg-[#1D1D1D] text-white/50 hover:text-white border border-white/[0.06] flex items-center justify-center shrink-0 cursor-default"
-          title={uploadedDoc ? `Document active: ${uploadedDoc.document_name}` : 'Waiting for document...'}
+        <button
+          type="button"
+          onClick={onUploadClick}
+          className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white/70 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-all hover:scale-105"
+          title="Upload new PDF document"
         >
           <Paperclip className="w-4 h-4" />
-        </div>
+        </button>
 
-        {/* Text Area */}
+        {/* Text Input */}
         <textarea
           ref={textareaRef}
           value={input}
@@ -119,16 +113,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           placeholder={
             uploadedDoc
               ? 'Ask anything about your document...'
-              : 'Waiting for document...'
+              : 'Click 📎 attachment to upload a PDF or ask...'
           }
           rows={1}
           disabled={!uploadedDoc || isStreaming}
-          className="flex-1 bg-transparent text-white text-sm placeholder:text-white/38 resize-none outline-none max-h-40 py-2 leading-relaxed font-sans"
+          className="flex-1 bg-transparent text-white text-sm placeholder:text-white/35 resize-none outline-none max-h-40 py-2 leading-relaxed font-sans"
         />
 
-        {/* Submit / Stop Button */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="hidden sm:inline-block text-[10px] font-mono text-white/38 pr-1">
+        {/* Submit / Stop Action */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span className="hidden sm:inline-block text-[11px] font-mono text-white/30 pr-1">
             Press Enter ↵
           </span>
 
@@ -136,7 +130,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="button"
               onClick={onStopStreaming}
-              className="p-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all shadow-sm"
+              className="p-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all shadow-sm cursor-pointer"
               title="Stop Generating"
             >
               <Square className="w-4 h-4 fill-current" />
@@ -145,13 +139,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="submit"
               disabled={!input.trim() || !uploadedDoc}
-              className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${
+              className={`p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
                 input.trim() && uploadedDoc
-                  ? 'bg-white text-black hover:bg-white/90 cursor-pointer shadow-sm'
+                  ? 'bg-white text-black hover:bg-white/90 shadow-md'
                   : 'bg-white/10 text-white/30 border border-white/5 cursor-not-allowed'
               }`}
             >
-              <ArrowUp className="w-4 h-4" />
+              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
             </button>
           )}
         </div>

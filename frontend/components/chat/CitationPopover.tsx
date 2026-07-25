@@ -36,7 +36,7 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({ citation, onCl
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-white/80" />
-              <h4 className="text-xs font-semibold text-white">
+              <h4 className="text-xs font-semibold text-white font-['Space_Grotesk']">
                 Citation Excerpt — Page {citation.page_number}
               </h4>
             </div>
@@ -61,7 +61,7 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({ citation, onCl
 
           {/* Excerpt Content Box */}
           <div className="p-3.5 bg-[#202020] rounded-xl border border-white/10 text-xs text-white/90 leading-relaxed max-h-60 overflow-y-auto font-mono">
-            "{citation.excerpt}"
+            "{citation.snippet || (citation as any).excerpt}"
           </div>
 
           {/* Footer */}

@@ -1,34 +1,29 @@
 import time
 import json
 import gc
-from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
+import hashlib
+from typing import List, Optional
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.database.session import get_db, check_database_health
 from app.schemas.health import SystemHealthResponse
-from app.schemas.rag import (
-    UploadResponse, ChatRequest, Citation
-)
+from app.schemas.rag import UploadResponse, ChatRequest, Citation
 from app.config.settings import settings
 from app.utils.logging import logger
 from app.api.deps import (
     get_pdf_service, get_chunk_service, get_embedding_service,
     get_vector_service, get_retrieval_service, get_prompt_service,
-    get_llm_service, get_intent_service, get_citation_service, get_response_formatter
+    get_llm_service, get_citation_service, get_response_formatter
 )
-from app.services.pdf_service import PDFService
-from app.services.chunk_service import ChunkService
-from app.services.embedding_service import EmbeddingService
-from app.services.vector_service import VectorService
-from app.services.retrieval_service import RetrievalService
-from app.services.prompt_service import PromptService
-from app.services.llm_service import LLMService
-from app.services.intent_service import IntentService
-from app.services.citation_service import CitationService
-from app.services.response_formatter import ResponseFormatter
+from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.models.user import User
+
+from app.repositories.document_repository import DocumentRepository
+from app.repositories.document_chunk_repository import DocumentChunkRepository
+from app.repositories.chat_repository import ChatRepository
+from app.repositories.message_repository import MessageRepository
 
 router = APIRouter()
 
@@ -37,10 +32,6 @@ async def health_check(
     groq_service: LLMService = Depends(get_llm_service),
     vector_service: VectorService = Depends(get_vector_service)
 ):
-    """
-    Returns live operational status of PostgreSQL database, Google OAuth, Groq API, and Qdrant Cloud.
-    Database check performs an actual 'SELECT 1' query on PostgreSQL.
-    """
     db_ok, db_latency = check_database_health()
     qdrant_ok = await vector_service.check_health()
     groq_ok = await groq_service.check_health()
@@ -55,9 +46,6 @@ async def health_check(
 
 @router.get("/ready")
 async def readiness_probe():
-    """
-    Readiness probe confirming database connectivity and server operational state.
-    """
     db_ok, db_latency = check_database_health()
     if not db_ok:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
@@ -65,24 +53,22 @@ async def readiness_probe():
 
 @router.get("/live")
 async def liveness_probe():
-    """
-    Liveness probe confirming server event loop is active.
-    """
     return {"status": "live"}
 
-@router.post("/upload", response_model=UploadResponse)
+@router.post("/upload")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     pdf_service: PDFService = Depends(get_pdf_service),
     chunk_service: ChunkService = Depends(get_chunk_service),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
     vector_service: VectorService = Depends(get_vector_service)
 ):
-    """
-    Parses PDF incrementally, generates chunks in micro-batches (16 at a time),
-    embeds on CPU, and streams vectors directly into Qdrant for O(1) memory usage (< 95 MB RAM).
-    """
-    start_total_time = time.perf_counter()
+    start_time = time.perf_counter()
+    logger.info(f"\n==================== [STAGE 1: UPLOAD INIT] ====================")
+    logger.info(f"File Received: '{file.filename}', User: '{current_user.email}' (id={current_user.id})")
 
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -91,7 +77,10 @@ async def upload_document(
         )
 
     file_bytes = await file.read()
-    file_size_mb = len(file_bytes) / (1024 * 1024)
+    file_size_bytes = len(file_bytes)
+    file_size_mb = file_size_bytes / (1024 * 1024)
+    logger.info(f"PDF File Size: {file_size_bytes} bytes ({file_size_mb:.2f} MB)")
+
     if file_size_mb > settings.MAX_FILE_SIZE_MB:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -99,141 +88,315 @@ async def upload_document(
         )
 
     try:
-        t0 = time.perf_counter()
-        
-        # 1. Initialize collection in Qdrant
-        await vector_service.init_collection(force_recreate=True)
-        
-        # 2. Incremental Streaming & Micro-Batching (16 chunks per batch)
-        pages_gen = pdf_service.extract_pages_generator(file_bytes, file.filename)
-        chunks_gen = chunk_service.create_chunks_generator(pages_gen, file.filename)
+        user_id = str(current_user.id)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        logger.info(f"Computed SHA-256 Hash: {file_hash[:16]}...")
 
-        total_chunks = 0
-        total_pages = 0
-        batch_chunks: List[ChunkMetadata] = []
-        BATCH_SIZE = 16
+        doc_repo = DocumentRepository(db)
+        chat_repo = ChatRepository(db)
 
-        t_embed_total_ms = 0.0
-        t_vector_total_ms = 0.0
-
-        for chunk in chunks_gen:
-            total_chunks += 1
-            if chunk.page_number > total_pages:
-                total_pages = chunk.page_number
-            
-            batch_chunks.append(chunk)
-
-            if len(batch_chunks) >= BATCH_SIZE:
-                # Process micro-batch
-                tb0 = time.perf_counter()
-                batch_texts = [c.chunk_text for c in batch_chunks]
-                batch_embeddings = embedding_service.generate_embeddings(batch_texts)
-                t_embed_total_ms += (time.perf_counter() - tb0) * 1000
-
-                tb1 = time.perf_counter()
-                await vector_service.upsert_chunks(batch_chunks, batch_embeddings)
-                t_vector_total_ms += (time.perf_counter() - tb1) * 1000
-
-                # Immediately free batch memory
-                del batch_chunks, batch_texts, batch_embeddings
-                batch_chunks = []
-                gc.collect()
-
-        # Process any remaining chunks in final micro-batch
-        if batch_chunks:
-            tb0 = time.perf_counter()
-            batch_texts = [c.chunk_text for c in batch_chunks]
-            batch_embeddings = embedding_service.generate_embeddings(batch_texts)
-            t_embed_total_ms += (time.perf_counter() - tb0) * 1000
-
-            tb1 = time.perf_counter()
-            await vector_service.upsert_chunks(batch_chunks, batch_embeddings)
-            t_vector_total_ms += (time.perf_counter() - tb1) * 1000
-
-            del batch_chunks, batch_texts, batch_embeddings
-            gc.collect()
-
-        # Release raw file bytes
-        del file_bytes
-        gc.collect()
-
-        parse_time_ms = (time.perf_counter() - t0) * 1000
-        total_time_ms = (time.perf_counter() - start_total_time) * 1000
-
-        if total_chunks == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not extract readable text from PDF. Document may be empty or image-only."
+        # 1. User-Scoped SHA-256 Deduplication Lookup
+        existing_doc = doc_repo.get_ready_by_hash_and_user(file_hash, user_id)
+        if existing_doc:
+            logger.info(f"[SHA-256 REUSE SUCCESS] Found existing document '{existing_doc.filename}' for user '{current_user.email}'. Reusing vectors instantly!")
+            chat_session = chat_repo.create_session(
+                user_id=user_id,
+                document_id=existing_doc.id,
+                title="General Discussion"
             )
-
-        logger.info(
-            f"Incremental upload complete for '{file.filename}': {total_pages} pages, {total_chunks} chunks. "
-            f"Total processing time: {total_time_ms:.1f}ms"
-        )
-
-        return UploadResponse(
-            status="success",
-            document_name=file.filename,
-            total_pages=total_pages,
-            total_chunks=total_chunks,
-            timing_ms={
-                "pdf_extraction": round(parse_time_ms, 2),
-                "chunking": round(parse_time_ms, 2),
-                "embedding_generation": round(t_embed_total_ms, 2),
-                "vector_indexing": round(t_vector_total_ms, 2),
-                "total_processing": round(total_time_ms, 2)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            return {
+                "status": "success",
+                "document_id": existing_doc.id,
+                "chat_session_id": chat_session.id,
+                "document_name": existing_doc.filename,
+                "total_pages": existing_doc.page_count,
+                "total_chunks": 0,
+                "is_cached": True,
+                "document_status": "ready",
+                "timing_ms": {
+                    "hash_lookup": round(elapsed_ms, 2),
+                    "total_processing": round(elapsed_ms, 2)
+                }
             }
+
+        # 2. Save Document Record ('processing')
+        doc = doc_repo.create(
+            user_id=user_id,
+            filename=file.filename,
+            display_name=file.filename,
+            file_hash=file_hash,
+            file_size=file_size_bytes,
+            page_count=1,
+            mime_type="application/pdf",
+            processing_status="processing",
+            embedding_status="processing"
         )
-    except HTTPException:
-        raise
+
+        # 3. Create Initial Chat Session
+        chat_session = chat_repo.create_session(
+            user_id=user_id,
+            document_id=doc.id,
+            title="General Discussion"
+        )
+
+        # 4. Enqueue Background Processing Task
+        background_tasks.add_task(
+            process_document_background,
+            document_id=doc.id,
+            file_bytes=file_bytes,
+            filename=file.filename,
+            pdf_service=pdf_service,
+            chunk_service=chunk_service,
+            embedding_service=embedding_service,
+            vector_service=vector_service
+        )
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(f"Upload and background enqueue finished in {elapsed_ms:.2f}ms\n================================================================\n")
+        return {
+            "status": "processing",
+            "document_id": doc.id,
+            "chat_session_id": chat_session.id,
+            "document_name": doc.filename,
+            "total_pages": 1,
+            "total_chunks": 0,
+            "is_cached": False,
+            "document_status": "processing",
+            "timing_ms": {
+                "upload_and_enqueue": round(elapsed_ms, 2),
+                "total_processing": round(elapsed_ms, 2)
+            }
+        }
     except Exception as e:
-        logger.exception(f"Error processing PDF upload '{file.filename}': {str(e)}")
+        logger.exception(f"[UPLOAD ERROR] Failed to upload PDF '{file.filename}': {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while processing the PDF file: {str(e)}"
+            detail=f"An error occurred while uploading the PDF file: {str(e)}"
         )
 
+@router.get("/documents")
+async def list_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc_repo = DocumentRepository(db)
+    docs = doc_repo.get_user_documents(str(current_user.id))
+    return [d.to_dict() for d in docs]
+
+@router.get("/documents/{document_id}")
+async def get_document_details(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc_repo = DocumentRepository(db)
+    chunk_repo = DocumentChunkRepository(db)
+
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or str(doc.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    
+    doc_data = doc.to_dict()
+    doc_data["chunks"] = [c.to_dict() for c in chunk_repo.get_by_document(document_id)]
+    return doc_data
+
+@router.post("/documents/{document_id}/chats")
+async def create_document_chat_session(
+    document_id: str,
+    payload: dict = Body(default={}),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc_repo = DocumentRepository(db)
+    chat_repo = ChatRepository(db)
+
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or str(doc.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    title = payload.get("title") or f"Conversation {len(doc.chat_sessions) + 1}"
+    chat_session = chat_repo.create_session(
+        user_id=str(current_user.id),
+        document_id=doc.id,
+        title=title
+    )
+    return chat_session.to_dict()
+
+@router.get("/chats")
+async def list_chats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chat_repo = ChatRepository(db)
+    sessions = chat_repo.get_by_user(str(current_user.id))
+    return [s.to_dict() for s in sessions]
+
+@router.get("/chats/{session_id}")
+async def get_chat_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chat_repo = ChatRepository(db)
+    msg_repo = MessageRepository(db)
+
+    session = chat_repo.get_by_id(session_id)
+    if not session or str(session.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+
+    messages = msg_repo.get_session_messages(session_id)
+    session_data = session.to_dict()
+    session_data["messages"] = [m.to_dict() for m in messages]
+    return session_data
+
+@router.patch("/chats/{session_id}")
+async def rename_chat_session(
+    session_id: str,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    title = payload.get("title", "").strip()
+    if not title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title cannot be empty")
+
+    chat_repo = ChatRepository(db)
+    session = chat_repo.get_by_id(session_id)
+    if not session or str(session.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+
+    updated_session = chat_repo.update_title(session_id, title)
+    return updated_session.to_dict()
+
+@router.delete("/chats/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chat_repo = ChatRepository(db)
+    session = chat_repo.get_by_id(session_id)
+    if not session or str(session.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+
+    chat_repo.delete_session(session_id)
+    return {"status": "success", "message": "Conversation deleted successfully. Document preserved."}
+
+@router.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    vector_service: VectorService = Depends(get_vector_service)
+):
+    doc_repo = DocumentRepository(db)
+    chunk_repo = DocumentChunkRepository(db)
+
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or str(doc.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    await vector_service.delete_document_vectors(document_id)
+    chunk_repo.delete_by_document(document_id)
+    doc_repo.delete(document_id)
+
+    return {"status": "success", "message": "Document and all associated conversations deleted successfully."}
+
+@router.post("/chats/{session_id}/chat")
 @router.post("/chat")
-async def chat_with_document(
+async def chat_with_session(
     request: ChatRequest,
+    session_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     prompt_service: PromptService = Depends(get_prompt_service),
     llm_service: LLMService = Depends(get_llm_service),
     citation_service: CitationService = Depends(get_citation_service),
-    response_formatter: ResponseFormatter = Depends(get_response_formatter)
+    response_formatter: ResponseFormatter = Depends(get_response_formatter),
+    vector_service: VectorService = Depends(get_vector_service)
 ):
-    """
-    Intent detection + Metadata Entity Extraction + Confidence Thresholding + SSE streaming.
-    """
     question = request.question.strip()
+    logger.info(f"\n==================== [RAG REQUEST: QUESTION] ====================")
+    logger.info(f"Question: '{question}', User: '{current_user.email}', Session ID: {session_id}")
+
     if not question:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Question string cannot be empty."
         )
 
+    chat_repo = ChatRepository(db)
+    msg_repo = MessageRepository(db)
+    doc_repo = DocumentRepository(db)
+    target_session = None
+    document_id = None
+    doc = None
+
+    if session_id:
+        target_session = chat_repo.get_by_id(session_id)
+        if target_session:
+            if str(target_session.user_id) != str(current_user.id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this chat session")
+            document_id = target_session.document_id
+            doc = doc_repo.get_by_id(document_id)
+            if doc and doc.processing_status == "processing":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Document is still processing in the background. Please wait a moment."
+                )
+
+    if target_session:
+        msg_repo.add_message(
+            chat_session_id=target_session.id,
+            role="user",
+            content=question
+        )
+        chat_repo.update_last_message_at(target_session.id)
+
+        # Automatic Titling
+        if target_session.title in ["General Discussion", "New Conversation"] or target_session.title.endswith("Notes"):
+            words = question.split()
+            auto_title = " ".join(words[:4]).strip("?,.!")
+            if auto_title:
+                auto_title = auto_title[:30].title()
+                chat_repo.update_title(target_session.id, auto_title)
+
     try:
         t0 = time.perf_counter()
-        
-        # 1. Intent Detection & Adaptive Retrieval
-        retrieved_chunks, metadata_info = await retrieval_service.retrieve_context_with_intent(question)
+
+        retrieved_chunks, metadata_info = await retrieval_service.retrieve_context_with_intent(
+            question,
+            document_id=document_id
+        )
+
+        if not retrieved_chunks and document_id:
+            logger.info(f"[RETRIEVAL FALLBACK] Fetching document chunks for doc_id={document_id}")
+            retrieved_chunks = await vector_service.get_all_chunks(document_id=document_id, max_limit=30)
+
         retrieval_time_ms = (time.perf_counter() - t0) * 1000
 
-        # 2. Extract Entities & Check Structured Direct Match
         from app.services.metadata_extractor import MetadataExtractor
         doc_text = " ".join([c.chunk_text for c in retrieved_chunks]) if retrieved_chunks else ""
         extracted_entities = MetadataExtractor.extract_document_entities(doc_text)
         direct_match = MetadataExtractor.match_entity_query(question, extracted_entities)
 
-        # 3. Process & Deduplicate Citations
         citations = citation_service.process_citations(retrieved_chunks)
-
-        # 4. Build Intent-Adapted Production Prompt
         system_prompt = prompt_service.get_system_prompt()
-        user_prompt = prompt_service.build_prompt(question, retrieved_chunks, intent=metadata_info["intent"])
+        
+        doc_name = doc.display_name if doc else None
+        doc_pages = doc.page_count if doc else None
+
+        user_prompt = prompt_service.build_prompt(
+            question,
+            retrieved_chunks,
+            intent=metadata_info["intent"],
+            doc_filename=doc_name,
+            doc_page_count=doc_pages
+        )
 
         async def stream_generator():
-            # Event 1: Send metadata, citations, intent, confidence header
             meta_event = {
                 "type": "metadata",
                 "citations": [c.model_dump() for c in citations],
@@ -243,95 +406,62 @@ async def chat_with_document(
             }
             yield f"data: {json.dumps(meta_event)}\n\n"
 
-            # Case A: Direct Structured Metadata Match (Fast Path - No LLM required)
+            final_answer = ""
+            total_time_ms = 0.0
+
             if direct_match:
-                logger.info(f"Direct entity match found for question '{question}': {direct_match}")
+                final_answer = direct_match
                 yield f"data: {json.dumps({'type': 'token', 'content': direct_match})}\n\n"
-                done_event = {
-                    "type": "done",
-                    "content": direct_match,
-                    "timing_ms": {
-                        "retrieval_time": round(retrieval_time_ms, 2),
-                        "llm_response_time": 0.0,
-                        "total_response_time": round((time.perf_counter() - t0) * 1000, 2)
-                    }
-                }
-                yield f"data: {json.dumps(done_event)}\n\n"
-                return
+                total_time_ms = (time.perf_counter() - t0) * 1000
+            elif not retrieved_chunks and not doc:
+                final_answer = "Not found in the uploaded document."
+                yield f"data: {json.dumps({'type': 'token', 'content': final_answer})}\n\n"
+                total_time_ms = (time.perf_counter() - t0) * 1000
+            else:
+                t_llm_start = time.perf_counter()
+                accumulated_text = ""
 
-            # Case B: Low Confidence / No Chunks -> Return "Not found in the uploaded document."
-            if metadata_info["confidence"] == "Low" or not retrieved_chunks:
-                absent_msg = "Not found in the uploaded document."
-                yield f"data: {json.dumps({'type': 'token', 'content': absent_msg})}\n\n"
-                done_event = {
-                    "type": "done",
-                    "content": absent_msg,
-                    "timing_ms": {
-                        "retrieval_time": round(retrieval_time_ms, 2),
-                        "llm_response_time": 0.0,
-                        "total_response_time": round((time.perf_counter() - t0) * 1000, 2)
-                    }
-                }
-                yield f"data: {json.dumps(done_event)}\n\n"
-                return
+                async for token in llm_service.generate_response_stream(system_prompt, user_prompt):
+                    accumulated_text += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
-            # Case C: Stream response from Groq LLM API with Intent Rules
-            t_llm_start = time.perf_counter()
-            accumulated_text = ""
+                llm_time_ms = (time.perf_counter() - t_llm_start) * 1000
+                total_time_ms = (time.perf_counter() - t0) * 1000
+                final_answer = response_formatter.format_final_answer(
+                    accumulated_text,
+                    citations,
+                    intent=metadata_info["intent"]
+                )
 
-            async for token in llm_service.generate_response_stream(system_prompt, user_prompt):
-                accumulated_text += token
-                token_event = {
-                    "type": "token",
-                    "content": token
-                }
-                yield f"data: {json.dumps(token_event)}\n\n"
-
-            llm_time_ms = (time.perf_counter() - t_llm_start) * 1000
-            total_time_ms = (time.perf_counter() - t0) * 1000
-
-            # Final intent-based formatting & sanitization
-            cleaned_text = response_formatter.format_final_answer(
-                accumulated_text,
-                citations,
-                intent=metadata_info["intent"]
-            )
+            if target_session and final_answer:
+                try:
+                    msg_repo.add_message(
+                        chat_session_id=target_session.id,
+                        role="assistant",
+                        content=final_answer,
+                        citations=[c.model_dump() for c in citations],
+                        timing_ms={
+                            "retrieval_time": round(retrieval_time_ms, 2),
+                            "total_response_time": round(total_time_ms, 2)
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to persist assistant response in DB: {str(e)}")
 
             done_event = {
                 "type": "done",
-                "content": cleaned_text,
+                "content": final_answer,
                 "timing_ms": {
                     "retrieval_time": round(retrieval_time_ms, 2),
-                    "llm_response_time": round(llm_time_ms, 2),
                     "total_response_time": round(total_time_ms, 2)
                 }
             }
             yield f"data: {json.dumps(done_event)}\n\n"
 
-        return StreamingResponse(
-            stream_generator(),
-            media_type="text/event-stream"
-        )
+        return StreamingResponse(stream_generator(), media_type="text/event-stream")
     except Exception as e:
         logger.error(f"Error executing chat stream: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate response for the requested document."
-        )
-
-@router.delete("/document")
-async def delete_document(
-    vector_service: VectorService = Depends(get_vector_service)
-):
-    """
-    Deletes the uploaded PDF vectors from Qdrant.
-    """
-    try:
-        await vector_service.delete_collection()
-        return {"status": "success", "message": "Document and vectors successfully deleted."}
-    except Exception as e:
-        logger.error(f"Failed to delete document collection: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete document collection: {str(e)}"
         )

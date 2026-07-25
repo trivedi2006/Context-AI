@@ -33,19 +33,19 @@ export const Navbar: React.FC<NavbarProps> = ({ health, uploadedDoc, onClearDocu
           <div className="hidden md:flex items-center gap-2 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/80 text-xs">
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800/50">
               <span className="text-slate-400">Backend:</span>
-              <span className={`w-2 h-2 rounded-full ${health?.backend === 'ok' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
+              <span className={`w-2 h-2 rounded-full ${health?.backend === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
             </div>
 
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800/50">
               <Cpu className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-slate-400">Groq:</span>
-              <span className={`w-2 h-2 rounded-full ${health?.groq.status === 'ok' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+              <span className={`w-2 h-2 rounded-full ${health?.groq.status === 'connected' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
             </div>
 
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800/50">
               <Database className="w-3.5 h-3.5 text-cyan-400" />
               <span className="text-slate-400">Qdrant:</span>
-              <span className={`w-2 h-2 rounded-full ${health?.qdrant.status === 'ok' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+              <span className={`w-2 h-2 rounded-full ${health?.qdrant.status === 'connected' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
             </div>
           </div>
 
