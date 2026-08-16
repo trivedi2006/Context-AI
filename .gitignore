@@ -66,9 +66,12 @@ htmlcov/
 # Environment & Secrets (NEVER COMMIT SECRETS)
 # ------------------------------------------
 .env
+.env.*
 *.env
-.env*.local
+**/.env
+**/.env.*
 !.env.example
+!.env.production
 
 # ------------------------------------------
 # Operating System & IDE Files
